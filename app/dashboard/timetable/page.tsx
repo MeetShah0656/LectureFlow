@@ -18,6 +18,10 @@ import {
   Sparkles,
   AlertCircle,
   Loader2,
+  FileImage,
+  FileText,
+  Upload,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   getUserTimetable,
@@ -25,6 +29,7 @@ import {
   addTimetableEntry,
   updateTimetableEntry,
   deleteTimetableEntry,
+  scanAndAddTimetable,
   type TimetableEntryData,
 } from './actions';
 
@@ -115,6 +120,14 @@ export default function TimetablePage() {
   const [formRoom, setFormRoom] = React.useState('');
   const [formTeacher, setFormTeacher] = React.useState('');
   const [formError, setFormError] = React.useState('');
+
+  // AI Scan state
+  const [scanDialogOpen, setScanDialogOpen] = React.useState(false);
+  const [scanFile, setScanFile] = React.useState<File | null>(null);
+  const [scanning, setScanning] = React.useState(false);
+  const [scanStatus, setScanStatus] = React.useState<'idle' | 'uploading' | 'analyzing' | 'success' | 'error'>('idle');
+  const [scanError, setScanError] = React.useState('');
+  const [scanCount, setScanCount] = React.useState(0);
 
   // Load data on mount
   React.useEffect(() => {
@@ -232,6 +245,48 @@ export default function TimetablePage() {
     setDeleteConfirm(null);
   };
 
+  // AI Scan handlers
+  const handleScanSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!scanFile) return;
+
+    setScanning(true);
+    setScanStatus('analyzing');
+    setScanError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', scanFile);
+
+      const res = await scanAndAddTimetable(formData);
+      if (res.success) {
+        setScanStatus('success');
+        setScanCount(res.count || 0);
+        // Reload timetable data
+        const ttRes = await getUserTimetable();
+        if (ttRes.success && ttRes.entries) {
+          setEntries(ttRes.entries as TimetableEntry[]);
+        }
+      } else {
+        setScanStatus('error');
+        setScanError(res.error || 'Failed to parse the timetable file.');
+      }
+    } catch (err: any) {
+      setScanStatus('error');
+      setScanError(err.message || 'An unexpected error occurred.');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setScanFile(e.target.files[0]);
+      setScanStatus('idle');
+      setScanError('');
+    }
+  };
+
   // Loading state
   if (loading) {
     return (
@@ -272,14 +327,30 @@ export default function TimetablePage() {
           </p>
         </div>
 
-        <Button
-          onClick={openAddDialog}
-          disabled={subjectsList.length === 0}
-          className="flex items-center space-x-2 rounded-xl shadow-sm"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Add Lecture</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => {
+              setScanFile(null);
+              setScanStatus('idle');
+              setScanError('');
+              setScanDialogOpen(true);
+            }}
+            variant="outline"
+            className="flex items-center space-x-2 rounded-xl shadow-xs"
+          >
+            <Sparkles className="h-4 w-4 text-primary" />
+            <span>AI Import Timetable</span>
+          </Button>
+
+          <Button
+            onClick={openAddDialog}
+            disabled={subjectsList.length === 0}
+            className="flex items-center space-x-2 rounded-xl shadow-sm"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Add Lecture</span>
+          </Button>
+        </div>
       </div>
 
       {/* No subjects warning */}
@@ -600,6 +671,131 @@ export default function TimetablePage() {
             </Button>
           </div>
         </div>
+      </Dialog>
+
+      {/* AI Timetable Scanner Dialog */}
+      <Dialog
+        isOpen={scanDialogOpen}
+        onClose={() => !scanning && setScanDialogOpen(false)}
+        title="AI Timetable Scanner"
+        description="Upload an image (PNG, JPG) or PDF of your timetable. LectureFlow will use AI to extract all classes automatically."
+      >
+        <form onSubmit={handleScanSubmit} className="space-y-4 pt-2">
+          {scanStatus === 'idle' && (
+            <div className="space-y-4">
+              {/* File Dropzone */}
+              <div className="border-2 border-dashed border-muted hover:border-primary/50 transition-all rounded-xl p-8 text-center relative cursor-pointer group">
+                <input
+                  type="file"
+                  accept="image/png, image/jpeg, image/jpg, application/pdf"
+                  onChange={handleFileChange}
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                />
+                <div className="flex flex-col items-center justify-center space-y-2">
+                  <div className="p-3 bg-primary/5 rounded-full text-primary group-hover:scale-110 transition-transform">
+                    <Upload className="h-8 w-8" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-foreground">
+                      Click to upload or drag & drop
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      PNG, JPEG, or PDF (max 8MB)
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {scanFile && (
+                <div className="flex items-center space-x-3 p-3 bg-muted/40 rounded-xl">
+                  {scanFile.type === 'application/pdf' ? (
+                    <FileText className="h-8 w-8 text-primary shrink-0" />
+                  ) : (
+                    <FileImage className="h-8 w-8 text-primary shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold truncate text-foreground">
+                      {scanFile.name}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {(scanFile.size / 1024 / 1024).toFixed(2)} MB
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end space-x-2 pt-3 border-t border-border/40">
+                <Button variant="ghost" onClick={() => setScanDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={!scanFile} className="min-w-[100px]">
+                  Start Scanning
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {scanStatus === 'analyzing' && (
+            <div className="flex flex-col items-center justify-center py-12 space-y-4 text-center">
+              <Loader2 className="h-10 w-10 text-primary animate-spin" />
+              <div className="space-y-1">
+                <h4 className="text-sm font-bold">AI is parsing your timetable</h4>
+                <p className="text-xs text-muted-foreground max-w-xs">
+                  Extracting lecture slots, room locations, and teachers... This may take a few seconds.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {scanStatus === 'success' && (
+            <div className="flex flex-col items-center justify-center py-8 space-y-4 text-center">
+              <div className="p-3.5 bg-success/15 rounded-full text-success">
+                <CheckCircle2 className="h-10 w-10" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-bold tracking-tight">Scanner Complete</h3>
+                <p className="text-sm text-muted-foreground">
+                  AI successfully parsed and imported **{scanCount} lecture slots** into your weekly schedule grid!
+                </p>
+              </div>
+              <Button
+                className="mt-2 min-w-[120px]"
+                onClick={() => setScanDialogOpen(false)}
+              >
+                Done
+              </Button>
+            </div>
+          )}
+
+          {scanStatus === 'error' && (
+            <div className="space-y-4 py-2">
+              <div className="flex flex-col items-center justify-center space-y-3 text-center">
+                <div className="p-3 bg-destructive/15 rounded-full text-destructive">
+                  <AlertCircle className="h-8 w-8" />
+                </div>
+                <h4 className="text-sm font-bold text-destructive">Scanning Failed</h4>
+                <p className="text-xs text-muted-foreground max-w-sm">
+                  {scanError}
+                </p>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-3 border-t border-border/40">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setScanFile(null);
+                    setScanStatus('idle');
+                  }}
+                >
+                  Try Again
+                </Button>
+                <Button variant="default" onClick={() => setScanDialogOpen(false)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
+        </form>
       </Dialog>
     </div>
   );
