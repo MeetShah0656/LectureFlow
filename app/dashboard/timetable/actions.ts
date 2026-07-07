@@ -197,27 +197,68 @@ export async function scanAndAddTimetable(formData: FormData) {
     }
 
     const batchInstructions = batchName
-      ? `The student belongs to **${batchName}**. For any practicals/labs/workshops that are split by batches (e.g. "CN Lab (Batch A)", "DBMS Lab (B)", "ADA Lab (Batch C)"):
-- If the slot belongs to **${batchName}**, include it in the output and mark its "isBatchSpecific" field as true.
-- If it belongs to a different batch (e.g. Batch B, Batch C), DISCARD it completely. Do not include it.`
+      ? `The student belongs to **${batchName}** (sometimes referred to as Batch A, Batch B, Batch C, or Batch D). For any practicals/labs/workshops that are split by batches in the columns (e.g. columns under MONDAY/TUESDAY/etc. marked A, B, C, D):
+- If the column matches **${batchName}**, extract it and mark its "isBatchSpecific" field as true.
+- If it belongs to a different batch, DISCARD it completely. Do not include it.`
       : `The student does not belong to any specific lab batch. For batch-split classes, extract them normally, and set "isBatchSpecific" as false.`;
 
     const systemPrompt = `Analyze the provided college timetable document (image or PDF).
-Extract all schedule slots. Match each class slot to this JSON structure:
+This is a weekly grid timetable. Study it carefully and extract all lecture/lab schedule slots.
+
+### Layout Decoding Guide:
+1. **Days of the week** are listed as column headers: MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY.
+2. **Time intervals** are listed in the first column:
+   - "09:35 - 10:30"
+   - "10:30 - 11:30"
+   - "12:15 - 1:15"
+   - "1:15 - 2:15"
+   - "2:30 - 3:30"
+   - "3:30 - 4:25"
+   Note: "RECESS" rows are breaks, skip them.
+3. **Classroom Location**: The default room is "Room 305" (from "Class Room No.:- 305" at the top).
+4. **Subject Abbreviations**: Use the lookup table at the bottom left to get full subject names:
+   - "MI" = "Microprocessor and Interfacing"
+   - "PDS" = "Python for Data Science"
+   - "DM" = "Data Mining Techniques"
+   - "SS" = "System Software"
+   - "CN" = "Computer Network"
+   - "PM" = "Project Management"
+5. **Teacher Initials**: Use the lookup table at the bottom center/right to get full teacher names:
+   - "PDJ" = "Prof. Prexa Desai"
+   - "JBS" = "Prof. Jayna Shah"
+   - "PAP" = "Prof. Priyanka patel"
+   - "MPP" or "MMP" = "Prof. Minal patel"
+   - "NRS" = "Dr. Neha soni"
+   - "HVC" = "Prof. Hetal Chauhan"
+   - "MHS" = "Prof. Milind Shah"
+   - "JP" = "Prof. Jeenal Patel"
+6. **Class-Wide Lectures**:
+   - These span the entire width of a day's column for a time slot.
+   - Example: Monday 09:35 - 10:30 has "MI" as subject and "PDJ" as teacher. The room is "Room 305". "isBatchSpecific" is false.
+7. **Batch-Specific Lab Sessions**:
+   - Some slots are divided into columns labeled A, B, C, D representing student batches.
+   - Inside each batch column, there is a subject code (top), a lab code (middle, e.g. F2, F1, F4, S2, S3, S4), and a teacher initial (bottom, e.g. PJD/PDJ, JBS, NRS).
+   - Example: On Tuesday 12:15 - 1:15:
+     - Batch A has "MI" lab in room "Lab F2" with teacher "PDJ" (mapped from PJD/PDJ).
+     - Batch B has "PDS" lab in room "Lab F1" with teacher "JBS".
+     - Batch C has "SS" lab in room "Lab F4" with teacher "NRS".
+
+### Student Batch Filtering:
+${batchInstructions}
+
+Return a JSON array where each extracted slot matches this JSON structure:
 [
   {
     "dayOfWeek": number, // 1 = Monday, 2 = Tuesday, 3 = Wednesday, 4 = Thursday, 5 = Friday, 6 = Saturday, 7 = Sunday
-    "subject": "string", // Subject name (e.g. "Software Engineering")
-    "code": "string",    // Subject code if visible (e.g. "SE301"), or null
-    "startTime": "string", // "HH:MM" 24h format (e.g. "09:00" or "14:30")
-    "endTime": "string",   // "HH:MM" 24h format (e.g. "09:55" or "15:25")
-    "room": "string",      // Room/Lab name (e.g. "Room 403" or "Lab 3"), or null
-    "teacher": "string",   // Teacher name (e.g. "Prof. A. N. Shah"), or null
+    "subject": "string", // Full subject name (expanded from abbreviation, e.g. "Microprocessor and Interfacing")
+    "code": "string",    // Subject code (e.g. "MI", "PDS"), or null
+    "startTime": "string", // "HH:MM" 24h format (e.g. "09:35" or "12:15")
+    "endTime": "string",   // "HH:MM" 24h format (e.g. "10:30" or "13:15")
+    "room": "string",      // Full room name (e.g. "Room 305" or "Lab F2")
+    "teacher": "string",   // Full teacher name (expanded from initials, e.g. "Prof. Prexa Desai")
     "isBatchSpecific": boolean // true if it is a practical/lab session meant only for a specific batch, false otherwise
   }
 ]
-
-${batchInstructions}
 
 Return ONLY a valid JSON array matching this format. Do not wrap in markdown or add explanations.`;
 

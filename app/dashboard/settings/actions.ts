@@ -14,6 +14,14 @@ export async function getProfile() {
   try {
     const profile = await db.query.users.findFirst({
       where: eq(users.id, user.id),
+      with: {
+        university: true,
+        college: true,
+        branch: true,
+        semester: true,
+        class: true,
+        batch: true,
+      },
     });
 
     const userSettings = await db.query.settings.findFirst({

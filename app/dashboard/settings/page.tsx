@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { getProfile, updateProfile, updateNotificationSettings } from './actions';
-import { User, Bell, Check, Loader2 } from 'lucide-react';
+import { User, Bell, Check, Loader2, GraduationCap } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function SettingsPage() {
@@ -18,6 +18,14 @@ export default function SettingsPage() {
   const [academicYear, setAcademicYear] = React.useState('');
   const [attendanceRequirement, setAttendanceRequirement] = React.useState(75);
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
+
+  // Read-only profile details state
+  const [university, setUniversity] = React.useState('');
+  const [college, setCollege] = React.useState('');
+  const [branch, setBranch] = React.useState('');
+  const [semester, setSemester] = React.useState('');
+  const [className, setClassName] = React.useState('');
+  const [batchName, setBatchName] = React.useState('');
 
   // Success indicator states
   const [profileSuccess, setProfileSuccess] = React.useState(false);
@@ -32,6 +40,13 @@ export default function SettingsPage() {
           setAcademicYear(data.profile?.academicYear || '');
           setAttendanceRequirement(data.profile?.attendanceRequirement || 75);
           setNotificationsEnabled(data.settings?.notificationsEnabled ?? true);
+          
+          setUniversity(data.profile?.university?.name || 'Not Configured');
+          setCollege(data.profile?.college?.name || 'Not Configured');
+          setBranch(data.profile?.branch?.name || 'Not Configured');
+          setSemester(data.profile?.semester?.name || 'Not Configured');
+          setClassName(data.profile?.class?.name || 'Not Configured');
+          setBatchName(data.profile?.batch?.name || 'Class Wide (No Batch)');
         }
       } catch (err) {
         console.error('Failed to load settings', err);
@@ -155,6 +170,41 @@ export default function SettingsPage() {
           </CardFooter>
         </Card>
       </form>
+
+      {/* Card 2: Academic Profile Details (Read Only) */}
+      <Card className="border-border/60 bg-card/40 backdrop-blur-md">
+        <CardHeader>
+          <CardTitle className="text-lg font-bold flex items-center space-x-2">
+            <GraduationCap className="h-4 w-4 text-primary" />
+            <span>Academic Information</span>
+          </CardTitle>
+          <CardDescription>Your registered class, division, and batch details.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4 select-none">
+          <div className="space-y-1">
+            <span className="text-xs text-muted-foreground uppercase font-bold tracking-widest block">University</span>
+            <span className="text-sm font-semibold">{university}</span>
+          </div>
+          <div className="space-y-1">
+            <span className="text-xs text-muted-foreground uppercase font-bold tracking-widest block">College</span>
+            <span className="text-sm font-semibold">{college}</span>
+          </div>
+          <div className="space-y-1">
+            <span className="text-xs text-muted-foreground uppercase font-bold tracking-widest block">Branch</span>
+            <span className="text-sm font-semibold">{branch}</span>
+          </div>
+          <div className="space-y-1">
+            <span className="text-xs text-muted-foreground uppercase font-bold tracking-widest block">Academic Scope</span>
+            <span className="text-sm font-semibold">{semester} • {className}</span>
+          </div>
+          <div className="space-y-1 md:col-span-2">
+            <span className="text-xs text-muted-foreground uppercase font-bold tracking-widest block">Registered Lab Batch</span>
+            <span className="text-sm font-bold text-primary bg-primary/10 px-2.5 py-1 rounded-md inline-block mt-0.5">
+              {batchName}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Card 2: Notifications settings */}
       <Card className="border-border/60 bg-card/40 backdrop-blur-md">
