@@ -341,3 +341,21 @@ Return ONLY a valid JSON array matching this format. Do not wrap in markdown or 
   }
 }
 
+// Clear all timetable entries owned by the user
+export async function clearUserTimetable() {
+  try {
+    const user = await getAuthUser();
+    if (!user) throw new Error('Unauthorized');
+
+    await db.delete(timetable).where(eq(timetable.userId, user.id));
+
+    revalidatePath('/dashboard/timetable');
+    revalidatePath('/dashboard');
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error in clearUserTimetable:', error);
+    return { success: false, error: error.message || 'Failed to clear timetable.' };
+  }
+}
+

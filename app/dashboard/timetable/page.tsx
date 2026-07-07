@@ -22,6 +22,7 @@ import {
   FileText,
   Upload,
   CheckCircle2,
+  Eraser,
 } from 'lucide-react';
 import {
   getUserTimetable,
@@ -30,6 +31,7 @@ import {
   updateTimetableEntry,
   deleteTimetableEntry,
   scanAndAddTimetable,
+  clearUserTimetable,
   type TimetableEntryData,
 } from './actions';
 
@@ -128,6 +130,10 @@ export default function TimetablePage() {
   const [scanStatus, setScanStatus] = React.useState<'idle' | 'uploading' | 'analyzing' | 'success' | 'error'>('idle');
   const [scanError, setScanError] = React.useState('');
   const [scanCount, setScanCount] = React.useState(0);
+
+  // Clear timetable state
+  const [clearConfirmOpen, setClearConfirmOpen] = React.useState(false);
+  const [clearing, setClearing] = React.useState(false);
 
   // Load data on mount
   React.useEffect(() => {
@@ -287,6 +293,24 @@ export default function TimetablePage() {
     }
   };
 
+  // Clear timetable handler
+  const handleClear = async () => {
+    setClearing(true);
+    try {
+      const res = await clearUserTimetable();
+      if (res.success) {
+        setEntries((prev) => prev.filter((e) => !e.userId)); // Keep only shared class-level entries, remove owned ones
+        setClearConfirmOpen(false);
+      } else {
+        alert(res.error || 'Failed to clear timetable.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'An error occurred while clearing the timetable.');
+    } finally {
+      setClearing(false);
+    }
+  };
+
   // Loading state
   if (loading) {
     return (
@@ -328,6 +352,17 @@ export default function TimetablePage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {entries.some((e) => e.userId) && (
+            <Button
+              onClick={() => setClearConfirmOpen(true)}
+              variant="outline"
+              className="flex items-center space-x-2 rounded-xl border-destructive/25 hover:border-destructive/40 hover:bg-destructive/10 text-destructive shadow-xs"
+            >
+              <Eraser className="h-4 w-4" />
+              <span className="hidden sm:inline">Clear Custom</span>
+            </Button>
+          )}
+
           <Button
             onClick={() => {
               setScanFile(null);
@@ -796,6 +831,29 @@ export default function TimetablePage() {
             </div>
           )}
         </form>
+      </Dialog>
+
+      {/* Clear Timetable Confirmation Dialog */}
+      <Dialog
+        isOpen={clearConfirmOpen}
+        onClose={() => !clearing && setClearConfirmOpen(false)}
+        title="Clear Custom Timetable"
+        description="Are you sure you want to clear all custom lecture slots you've created or scanned? Shared class-level slots will not be affected."
+      >
+        <div className="space-y-4 pt-2">
+          <div className="flex justify-end space-x-2 pt-3 border-t border-border/40">
+            <Button variant="ghost" onClick={() => setClearConfirmOpen(false)} disabled={clearing}>
+              Cancel
+            </Button>
+            <Button onClick={handleClear} disabled={clearing} variant="destructive" className="min-w-[100px]">
+              {clearing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                'Clear All'
+              )}
+            </Button>
+          </div>
+        </div>
       </Dialog>
     </div>
   );
