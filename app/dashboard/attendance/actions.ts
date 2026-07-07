@@ -19,23 +19,31 @@ async function getAuthUser() {
   return dbUser ? { authId: user.id, ...dbUser } : null;
 }
 
-// Get today's timetable entries with their attendance status
-export async function getTodayAttendance() {
+// Get today's or a previous date's timetable entries with their attendance status
+export async function getTodayAttendance(dateStr?: string) {
   try {
     const user = await getAuthUser();
     if (!user) return { success: false, error: 'Unauthorized' };
     if (!user.semesterId) return { success: false, error: 'Please complete onboarding first.' };
 
-    // Get today's day of week (1=Mon, 7=Sun)
-    const jsDay = new Date().getDay();
-    const todayDayOfWeek = jsDay === 0 ? 7 : jsDay;
-    const todayDate = new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
+    let targetDateStr = dateStr;
+    let dayOfWeek: number;
 
-    // Fetch user's timetable for today
-    const conditions = [
-      eq(timetable.dayOfWeek, todayDayOfWeek),
-    ];
+    if (targetDateStr) {
+      // Parse YYYY-MM-DD
+      const dateParts = targetDateStr.split('-').map(Number);
+      // Create local date to avoid local offset shifting
+      const d = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
+      const jsDay = d.getDay();
+      dayOfWeek = jsDay === 0 ? 7 : jsDay;
+    } else {
+      const d = new Date();
+      const jsDay = d.getDay();
+      dayOfWeek = jsDay === 0 ? 7 : jsDay;
+      targetDateStr = d.toISOString().split('T')[0]; // "YYYY-MM-DD"
+    }
 
+    // Fetch user's timetable for the target day of week
     const userConditions = [eq(timetable.userId, user.id)];
     if (user.classId) {
       userConditions.push(
@@ -48,21 +56,21 @@ export async function getTodayAttendance() {
 
     const todayEntries = await db.query.timetable.findMany({
       where: and(
-        eq(timetable.dayOfWeek, todayDayOfWeek),
+        eq(timetable.dayOfWeek, dayOfWeek),
         or(...userConditions)
       ),
       with: { subject: true },
       orderBy: [asc(timetable.startTime)],
     });
 
-    // Fetch attendance records for today
+    // Fetch attendance records for the target date
     const todayRecords = await db
       .select()
       .from(attendance)
       .where(
         and(
           eq(attendance.userId, user.id),
-          eq(attendance.date, todayDate)
+          eq(attendance.date, targetDateStr)
         )
       );
 
@@ -76,7 +84,7 @@ export async function getTodayAttendance() {
       };
     });
 
-    return { success: true, entries: entriesWithStatus, todayDate };
+    return { success: true, entries: entriesWithStatus, todayDate: targetDateStr };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch attendance.';
     console.error('Error in getTodayAttendance:', error);

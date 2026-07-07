@@ -193,6 +193,24 @@ export default function AttendancePage() {
     setMarkingId(null);
   };
 
+  const handleDateChange = async (dateStr: string) => {
+    if (!dateStr) return;
+    setTodayDate(dateStr);
+    setLoading(true);
+    try {
+      const res = await getTodayAttendance(dateStr);
+      if (res.success) {
+        setTodayEntries((res.entries || []) as TodayEntry[]);
+      } else {
+        setError(res.error || 'Failed to load entries for selected date.');
+      }
+    } catch {
+      setError('An error occurred while switching dates.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Filter history by subject
   const filteredHistory = historyFilter
     ? historyRecords.filter((r) => r.timetable?.subject?.id === historyFilter)
@@ -276,15 +294,34 @@ export default function AttendancePage() {
           {/* ======= TODAY TAB ======= */}
           {activeTab === 'today' && (
             <div className="space-y-4">
+              <Card className="border-border/60 bg-card/40 backdrop-blur-md">
+                <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-bold flex items-center space-x-2">
+                      <Calendar className="h-4 w-4 text-primary" />
+                      <span>Select Attendance Date</span>
+                    </h4>
+                    <p className="text-xs text-muted-foreground">Select a previous date to review or edit past attendance logs.</p>
+                  </div>
+                  <input
+                    type="date"
+                    value={todayDate}
+                    max={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => handleDateChange(e.target.value)}
+                    className="flex h-10 w-full sm:w-[180px] rounded-xl border border-border/50 bg-background/30 px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 text-foreground"
+                  />
+                </CardContent>
+              </Card>
+
               {todayEntries.length === 0 ? (
                 <Card className="border-border/60 bg-card/40 backdrop-blur-md">
                   <CardContent className="flex flex-col items-center justify-center py-16 space-y-4">
                     <div className="p-4 bg-muted rounded-full text-muted-foreground">
                       <Calendar className="h-10 w-10" />
                     </div>
-                    <h3 className="text-lg font-bold tracking-tight">No Classes Today</h3>
+                    <h3 className="text-lg font-bold tracking-tight">No Classes Scheduled</h3>
                     <p className="text-sm text-muted-foreground max-w-sm text-center">
-                      You have no scheduled lectures for today. Add classes to your timetable to start tracking.
+                      There are no scheduled lectures for this day in your timetable.
                     </p>
                   </CardContent>
                 </Card>
