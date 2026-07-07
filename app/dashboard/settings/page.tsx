@@ -5,7 +5,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
-import { getProfile, updateProfile, updateNotificationSettings } from './actions';
+import {
+  getProfile,
+  updateProfile,
+  updateNotificationSettings,
+  getCustomSubjects,
+  addCustomSubject,
+  deleteCustomSubject,
+  getProfessors,
+  addProfessor,
+  deleteProfessor,
+} from './actions';
 import {
   getUniversities,
   getColleges,
@@ -14,7 +24,7 @@ import {
   getClasses,
   getBatches,
 } from '@/app/onboarding/actions';
-import { User, Bell, Check, Loader2, GraduationCap, Sparkles } from 'lucide-react';
+import { User, Bell, Check, Loader2, GraduationCap, Sparkles, Plus, Trash2, BookOpen } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function SettingsPage() {
@@ -47,6 +57,17 @@ export default function SettingsPage() {
   // Success indicator states
   const [profileSuccess, setProfileSuccess] = React.useState(false);
   const [notificationSuccess, setNotificationSuccess] = React.useState(false);
+
+  // Custom management states
+  const [customSubjects, setCustomSubjects] = React.useState<any[]>([]);
+  const [professorsList, setProfessorsList] = React.useState<any[]>([]);
+  
+  const [newSubName, setNewSubName] = React.useState('');
+  const [newSubCode, setNewSubCode] = React.useState('');
+  const [newProfName, setNewProfName] = React.useState('');
+
+  const [addingSubject, setAddingSubject] = React.useState(false);
+  const [addingProfessor, setAddingProfessor] = React.useState(false);
 
   // Synchronous change handlers to update downstream selections
   const handleUnivChange = async (val: string) => {
@@ -175,6 +196,13 @@ export default function SettingsPage() {
           if (clId) promises.push(getBatches(clId).then(setBatchList));
 
           await Promise.all(promises);
+
+          const [subjectsData, professorsData] = await Promise.all([
+            getCustomSubjects(),
+            getProfessors(),
+          ]);
+          setCustomSubjects(subjectsData);
+          setProfessorsList(professorsData);
         }
       } catch (err) {
         console.error('Failed to load settings', err);
@@ -223,6 +251,75 @@ export default function SettingsPage() {
       console.error(err);
     } finally {
       setUpdatingNotifications(false);
+    }
+  };
+
+  // Manage Custom Subjects Handlers
+  const handleAddSubject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSubName.trim()) return;
+    setAddingSubject(true);
+    try {
+      const res = await addCustomSubject(newSubName.trim(), newSubCode.trim() || undefined);
+      if (res.success && res.subject) {
+        setCustomSubjects((prev) => [...prev, res.subject].sort((a, b) => a.name.localeCompare(b.name)));
+        setNewSubName('');
+        setNewSubCode('');
+      } else {
+        alert(res.error || 'Failed to add subject.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'An error occurred.');
+    } finally {
+      setAddingSubject(false);
+    }
+  };
+
+  const handleDeleteSubject = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this subject? This will delete all attendance, timetable, and syllabus items related to it.')) return;
+    try {
+      const res = await deleteCustomSubject(id);
+      if (res.success) {
+        setCustomSubjects((prev) => prev.filter((s) => s.id !== id));
+      } else {
+        alert(res.error || 'Failed to delete subject.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'An error occurred.');
+    }
+  };
+
+  // Manage Professors Handlers
+  const handleAddProfessor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProfName.trim()) return;
+    setAddingProfessor(true);
+    try {
+      const res = await addProfessor(newProfName.trim());
+      if (res.success && res.professor) {
+        setProfessorsList((prev) => [...prev, res.professor].sort((a, b) => a.name.localeCompare(b.name)));
+        setNewProfName('');
+      } else {
+        alert(res.error || 'Failed to add professor.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'An error occurred.');
+    } finally {
+      setAddingProfessor(false);
+    }
+  };
+
+  const handleDeleteProfessor = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this professor?')) return;
+    try {
+      const res = await deleteProfessor(id);
+      if (res.success) {
+        setProfessorsList((prev) => prev.filter((p) => p.id !== id));
+      } else {
+        alert(res.error || 'Failed to delete professor.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'An error occurred.');
     }
   };
 
@@ -432,6 +529,121 @@ export default function SettingsPage() {
                 animate={{ x: notificationsEnabled ? 20 : 0 }}
               />
             </button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Card 3: Manage Custom Subjects */}
+      <Card className="border-border/60 bg-card/40 backdrop-blur-md">
+        <CardHeader>
+          <CardTitle className="text-lg font-bold flex items-center space-x-2">
+            <BookOpen className="h-4 w-4 text-primary" />
+            <span>Manage Subjects</span>
+          </CardTitle>
+          <CardDescription>Add or remove semester courses/subjects.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <form onSubmit={handleAddSubject} className="flex flex-col sm:flex-row gap-3">
+            <Input
+              placeholder="Subject Name (e.g. Computer Networks)"
+              value={newSubName}
+              onChange={(e) => setNewSubName(e.target.value)}
+              className="flex-1"
+              required
+            />
+            <Input
+              placeholder="Code (e.g. CS501)"
+              value={newSubCode}
+              onChange={(e) => setNewSubCode(e.target.value)}
+              className="w-full sm:w-[130px]"
+            />
+            <Button type="submit" disabled={addingSubject} className="rounded-xl flex items-center space-x-1 shrink-0">
+              {addingSubject ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              <span>Add</span>
+            </Button>
+          </form>
+
+          <div className="border border-border/30 rounded-xl overflow-hidden bg-background/20">
+            {customSubjects.length === 0 ? (
+              <div className="p-6 text-center text-sm text-muted-foreground">
+                No subjects registered for this semester. Add one above.
+              </div>
+            ) : (
+              <div className="divide-y divide-border/20 max-h-[220px] overflow-y-auto">
+                {customSubjects.map((sub) => (
+                  <div key={sub.id} className="flex items-center justify-between p-3.5 hover:bg-muted/10 transition-colors">
+                    <div>
+                      <span className="text-sm font-semibold text-foreground">{sub.name}</span>
+                      {sub.code && (
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase bg-muted px-2 py-0.5 rounded-md ml-2 inline-block">
+                          {sub.code}
+                        </span>
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDeleteSubject(sub.id)}
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      type="button"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Card 4: Manage Professors */}
+      <Card className="border-border/60 bg-card/40 backdrop-blur-md">
+        <CardHeader>
+          <CardTitle className="text-lg font-bold flex items-center space-x-2">
+            <User className="h-4 w-4 text-primary" />
+            <span>Professors Directory</span>
+          </CardTitle>
+          <CardDescription>Manually add professor names to show as options in your timetable.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <form onSubmit={handleAddProfessor} className="flex gap-3">
+            <Input
+              placeholder="Professor Name (e.g. Prof. Milind Shah)"
+              value={newProfName}
+              onChange={(e) => setNewProfName(e.target.value)}
+              className="flex-1"
+              required
+            />
+            <Button type="submit" disabled={addingProfessor} className="rounded-xl flex items-center space-x-1 shrink-0">
+              {addingProfessor ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              <span>Add</span>
+            </Button>
+          </form>
+
+          <div className="border border-border/30 rounded-xl overflow-hidden bg-background/20">
+            {professorsList.length === 0 ? (
+              <div className="p-6 text-center text-sm text-muted-foreground">
+                No professors configured in your directory. Add one above.
+              </div>
+            ) : (
+              <div className="divide-y divide-border/20 max-h-[220px] overflow-y-auto">
+                {professorsList.map((prof) => (
+                  <div key={prof.id} className="flex items-center justify-between p-3.5 hover:bg-muted/10 transition-colors">
+                    <span className="text-sm font-semibold text-foreground">{prof.name}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDeleteProfessor(prof.id)}
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      type="button"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

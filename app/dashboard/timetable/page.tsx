@@ -28,6 +28,7 @@ import {
   clearUserTimetable,
   type TimetableEntryData,
 } from './actions';
+import { getProfessors } from '../settings/actions';
 
 const DAYS = [
   { value: 1, label: 'Monday', short: 'Mon' },
@@ -98,6 +99,7 @@ function getTodayDayOfWeek(): number {
 export default function TimetablePage() {
   const [entries, setEntries] = React.useState<TimetableEntry[]>([]);
   const [subjectsList, setSubjectsList] = React.useState<SubjectItem[]>([]);
+  const [professorsList, setProfessorsList] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [selectedDay, setSelectedDay] = React.useState(getTodayDayOfWeek());
@@ -126,10 +128,15 @@ export default function TimetablePage() {
   // Load data on mount
   React.useEffect(() => {
     async function loadData() {
-      const [ttRes, subRes] = await Promise.all([
+      const [ttRes, subRes, profRes] = await Promise.all([
         getUserTimetable(),
         getUserSubjects(),
+        getProfessors(),
       ]);
+
+      if (profRes) {
+        setProfessorsList(profRes);
+      }
 
       if (ttRes.success && ttRes.entries) {
         setEntries(ttRes.entries as TimetableEntry[]);
@@ -613,13 +620,31 @@ export default function TimetablePage() {
                 onChange={(e) => setFormRoom(e.target.value)}
               />
             </div>
-            <div className="flex flex-col space-y-1.5">
-              <label className="text-sm font-medium text-foreground/80">Teacher <span className="text-muted-foreground">(optional)</span></label>
-              <Input
-                placeholder="e.g. Prof. A. Shah"
-                value={formTeacher}
-                onChange={(e) => setFormTeacher(e.target.value)}
-              />
+            <div className="flex flex-col space-y-1.5 flex-1">
+              {professorsList.length === 0 ? (
+                <div className="flex flex-col space-y-1">
+                  <label className="text-sm font-medium text-foreground/80">Teacher <span className="text-muted-foreground">(optional)</span></label>
+                  <Input
+                    placeholder="e.g. Prof. A. Shah"
+                    value={formTeacher}
+                    onChange={(e) => setFormTeacher(e.target.value)}
+                  />
+                  <span className="text-[9px] text-muted-foreground leading-none mt-0.5">Tip: Add professors in Settings to select from a dropdown.</span>
+                </div>
+              ) : (
+                <Select
+                  label="Teacher / Professor"
+                  value={formTeacher}
+                  onChange={(e) => setFormTeacher(e.target.value)}
+                >
+                  <option value="">Select Professor (optional)</option>
+                  {professorsList.map((prof) => (
+                    <option key={prof.id} value={prof.name}>
+                      {prof.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
             </div>
           </div>
 

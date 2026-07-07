@@ -181,6 +181,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
     references: [settings.userId],
   }),
   notifications: many(notifications),
+  professors: many(professors),
 }));
 
 // 8. Subjects Table
@@ -337,6 +338,25 @@ export const notifications = pgTable('notifications', {
 export const notificationsRelations = relations(notifications, ({ one }) => ({
   user: one(users, {
     fields: [notifications.userId],
+    references: [users.id],
+  }),
+}));
+
+// 14. Professors Table
+export const professors = pgTable('professors', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('professors_user_idx').on(table.userId),
+]);
+
+export const professorsRelations = relations(professors, ({ one }) => ({
+  user: one(users, {
+    fields: [professors.userId],
     references: [users.id],
   }),
 }));
