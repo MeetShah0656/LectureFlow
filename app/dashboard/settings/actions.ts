@@ -39,6 +39,12 @@ export interface ProfileUpdateData {
   name: string;
   attendanceRequirement: number;
   academicYear: string;
+  universityId: string;
+  collegeId: string;
+  branchId: string;
+  semesterId: string;
+  classId: string;
+  batchId?: string | null;
 }
 
 export async function updateProfile(data: ProfileUpdateData) {
@@ -51,6 +57,12 @@ export async function updateProfile(data: ProfileUpdateData) {
       name: data.name,
       attendanceRequirement: data.attendanceRequirement,
       academicYear: data.academicYear,
+      universityId: data.universityId,
+      collegeId: data.collegeId,
+      branchId: data.branchId,
+      semesterId: data.semesterId,
+      classId: data.classId,
+      batchId: data.batchId || null,
       updatedAt: new Date(),
     })
     .where(eq(users.id, user.id));

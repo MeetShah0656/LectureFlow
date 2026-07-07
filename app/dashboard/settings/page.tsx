@@ -4,8 +4,17 @@ import * as React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
 import { getProfile, updateProfile, updateNotificationSettings } from './actions';
-import { User, Bell, Check, Loader2, GraduationCap } from 'lucide-react';
+import {
+  getUniversities,
+  getColleges,
+  getBranches,
+  getSemesters,
+  getClasses,
+  getBatches,
+} from '@/app/onboarding/actions';
+import { User, Bell, Check, Loader2, GraduationCap, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function SettingsPage() {
@@ -19,17 +28,116 @@ export default function SettingsPage() {
   const [attendanceRequirement, setAttendanceRequirement] = React.useState(75);
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
 
-  // Read-only profile details state
-  const [university, setUniversity] = React.useState('');
-  const [college, setCollege] = React.useState('');
-  const [branch, setBranch] = React.useState('');
-  const [semester, setSemester] = React.useState('');
-  const [className, setClassName] = React.useState('');
-  const [batchName, setBatchName] = React.useState('');
+  // Editable Dropdown IDs
+  const [selectedUniv, setSelectedUniv] = React.useState('');
+  const [selectedCol, setSelectedCol] = React.useState('');
+  const [selectedBranch, setSelectedBranch] = React.useState('');
+  const [selectedSem, setSelectedSem] = React.useState('');
+  const [selectedClass, setSelectedClass] = React.useState('');
+  const [selectedBatch, setSelectedBatch] = React.useState('');
+
+  // Dropdown option lists
+  const [univList, setUnivList] = React.useState<any[]>([]);
+  const [colList, setColList] = React.useState<any[]>([]);
+  const [branchList, setBranchList] = React.useState<any[]>([]);
+  const [semList, setSemList] = React.useState<any[]>([]);
+  const [classList, setClassList] = React.useState<any[]>([]);
+  const [batchList, setBatchList] = React.useState<any[]>([]);
 
   // Success indicator states
   const [profileSuccess, setProfileSuccess] = React.useState(false);
   const [notificationSuccess, setNotificationSuccess] = React.useState(false);
+
+  // Synchronous change handlers to update downstream selections
+  const handleUnivChange = async (val: string) => {
+    setSelectedUniv(val);
+    setSelectedCol('');
+    setColList([]);
+    setSelectedBranch('');
+    setBranchList([]);
+    setSelectedSem('');
+    setSemList([]);
+    setSelectedClass('');
+    setClassList([]);
+    setSelectedBatch('');
+    setBatchList([]);
+    if (val) {
+      try {
+        const list = await getColleges(val);
+        setColList(list);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  const handleColChange = async (val: string) => {
+    setSelectedCol(val);
+    setSelectedBranch('');
+    setBranchList([]);
+    setSelectedSem('');
+    setSemList([]);
+    setSelectedClass('');
+    setClassList([]);
+    setSelectedBatch('');
+    setBatchList([]);
+    if (val) {
+      try {
+        const list = await getBranches(val);
+        setBranchList(list);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  const handleBranchChange = async (val: string) => {
+    setSelectedBranch(val);
+    setSelectedSem('');
+    setSemList([]);
+    setSelectedClass('');
+    setClassList([]);
+    setSelectedBatch('');
+    setBatchList([]);
+    if (val) {
+      try {
+        const list = await getSemesters(val);
+        setSemList(list);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  const handleSemChange = async (val: string) => {
+    setSelectedSem(val);
+    setSelectedClass('');
+    setClassList([]);
+    setSelectedBatch('');
+    setBatchList([]);
+    if (val) {
+      try {
+        const list = await getClasses(val);
+        setClassList(list);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  const handleClassChange = async (val: string) => {
+    setSelectedClass(val);
+    setSelectedBatch('');
+    setBatchList([]);
+    if (val) {
+      try {
+        const list = await getBatches(val);
+        setBatchList(list);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
 
   React.useEffect(() => {
     async function loadSettings() {
@@ -41,12 +149,32 @@ export default function SettingsPage() {
           setAttendanceRequirement(data.profile?.attendanceRequirement || 75);
           setNotificationsEnabled(data.settings?.notificationsEnabled ?? true);
           
-          setUniversity(data.profile?.university?.name || 'Not Configured');
-          setCollege(data.profile?.college?.name || 'Not Configured');
-          setBranch(data.profile?.branch?.name || 'Not Configured');
-          setSemester(data.profile?.semester?.name || 'Not Configured');
-          setClassName(data.profile?.class?.name || 'Not Configured');
-          setBatchName(data.profile?.batch?.name || 'Class Wide (No Batch)');
+          const uId = data.profile?.universityId || '';
+          const cId = data.profile?.collegeId || '';
+          const bId = data.profile?.branchId || '';
+          const sId = data.profile?.semesterId || '';
+          const clId = data.profile?.classId || '';
+          const btId = data.profile?.batchId || '';
+
+          setSelectedUniv(uId);
+          setSelectedCol(cId);
+          setSelectedBranch(bId);
+          setSelectedSem(sId);
+          setSelectedClass(clId);
+          setSelectedBatch(btId);
+
+          // Parallel query loading lists
+          const univs = await getUniversities();
+          setUnivList(univs);
+
+          const promises: Promise<any>[] = [];
+          if (uId) promises.push(getColleges(uId).then(setColList));
+          if (cId) promises.push(getBranches(cId).then(setBranchList));
+          if (bId) promises.push(getSemesters(bId).then(setSemList));
+          if (sId) promises.push(getClasses(sId).then(setClassList));
+          if (clId) promises.push(getBatches(clId).then(setBatchList));
+
+          await Promise.all(promises);
         }
       } catch (err) {
         console.error('Failed to load settings', err);
@@ -66,6 +194,12 @@ export default function SettingsPage() {
         name,
         academicYear,
         attendanceRequirement: Number(attendanceRequirement),
+        universityId: selectedUniv,
+        collegeId: selectedCol,
+        branchId: selectedBranch,
+        semesterId: selectedSem,
+        classId: selectedClass,
+        batchId: selectedBatch || null,
       });
       setProfileSuccess(true);
       setTimeout(() => setProfileSuccess(false), 3000);
@@ -152,6 +286,103 @@ export default function SettingsPage() {
                 />
               </div>
             </div>
+            {/* Academic Selections */}
+            <div className="border-t border-border/30 pt-4 mt-4 space-y-4">
+              <h4 className="text-sm font-bold flex items-center space-x-2 text-foreground/90">
+                <GraduationCap className="h-4 w-4 text-primary" />
+                <span>Academic Scope Selection</span>
+              </h4>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Select
+                  label="University"
+                  value={selectedUniv}
+                  onChange={(e) => handleUnivChange(e.target.value)}
+                  required
+                >
+                  <option value="">Select University</option>
+                  {univList.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </Select>
+
+                <Select
+                  label="College"
+                  value={selectedCol}
+                  onChange={(e) => handleColChange(e.target.value)}
+                  disabled={!selectedUniv}
+                  required
+                >
+                  <option value="">Select College</option>
+                  {colList.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </Select>
+
+                <Select
+                  label="Branch / Department"
+                  value={selectedBranch}
+                  onChange={(e) => handleBranchChange(e.target.value)}
+                  disabled={!selectedCol}
+                  required
+                >
+                  <option value="">Select Branch</option>
+                  {branchList.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </Select>
+
+                <Select
+                  label="Semester"
+                  value={selectedSem}
+                  onChange={(e) => handleSemChange(e.target.value)}
+                  disabled={!selectedBranch}
+                  required
+                >
+                  <option value="">Select Semester</option>
+                  {semList.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </Select>
+
+                <Select
+                  label="Class / Division"
+                  value={selectedClass}
+                  onChange={(e) => handleClassChange(e.target.value)}
+                  disabled={!selectedSem}
+                  required
+                >
+                  <option value="">Select Class</option>
+                  {classList.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </Select>
+
+                <Select
+                  label="Lab Batch (Optional)"
+                  value={selectedBatch}
+                  onChange={(e) => setSelectedBatch(e.target.value)}
+                  disabled={!selectedClass}
+                >
+                  <option value="">Class Wide (No Batch)</option>
+                  {batchList.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </div>
           </CardContent>
           <CardFooter className="flex justify-between border-t border-border/30 pt-4">
             <span className="text-xs text-muted-foreground">Changes propagate instantly to overview metrics.</span>
@@ -170,41 +401,6 @@ export default function SettingsPage() {
           </CardFooter>
         </Card>
       </form>
-
-      {/* Card 2: Academic Profile Details (Read Only) */}
-      <Card className="border-border/60 bg-card/40 backdrop-blur-md">
-        <CardHeader>
-          <CardTitle className="text-lg font-bold flex items-center space-x-2">
-            <GraduationCap className="h-4 w-4 text-primary" />
-            <span>Academic Information</span>
-          </CardTitle>
-          <CardDescription>Your registered class, division, and batch details.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4 select-none">
-          <div className="space-y-1">
-            <span className="text-xs text-muted-foreground uppercase font-bold tracking-widest block">University</span>
-            <span className="text-sm font-semibold">{university}</span>
-          </div>
-          <div className="space-y-1">
-            <span className="text-xs text-muted-foreground uppercase font-bold tracking-widest block">College</span>
-            <span className="text-sm font-semibold">{college}</span>
-          </div>
-          <div className="space-y-1">
-            <span className="text-xs text-muted-foreground uppercase font-bold tracking-widest block">Branch</span>
-            <span className="text-sm font-semibold">{branch}</span>
-          </div>
-          <div className="space-y-1">
-            <span className="text-xs text-muted-foreground uppercase font-bold tracking-widest block">Academic Scope</span>
-            <span className="text-sm font-semibold">{semester} • {className}</span>
-          </div>
-          <div className="space-y-1 md:col-span-2">
-            <span className="text-xs text-muted-foreground uppercase font-bold tracking-widest block">Registered Lab Batch</span>
-            <span className="text-sm font-bold text-primary bg-primary/10 px-2.5 py-1 rounded-md inline-block mt-0.5">
-              {batchName}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Card 2: Notifications settings */}
       <Card className="border-border/60 bg-card/40 backdrop-blur-md">
