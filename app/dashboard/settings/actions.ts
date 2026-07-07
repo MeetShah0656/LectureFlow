@@ -1,7 +1,7 @@
 'use server';
 
 import { db } from '@/database/db';
-import { users, settings, subjects, professors } from '@/database/schema';
+import { users, settings, subjects, professors, timeSlots } from '@/database/schema';
 import { createClient } from '@/lib/supabase/server';
 import { eq, asc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
@@ -224,5 +224,70 @@ export async function deleteProfessor(professorId: string) {
   } catch (error: any) {
     console.error('Error in deleteProfessor:', error);
     return { success: false, error: error.message || 'Failed to delete professor.' };
+  }
+}
+
+// Time Slots Actions
+export async function getTimeSlots() {
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+
+    return await db
+      .select()
+      .from(timeSlots)
+      .where(eq(timeSlots.userId, user.id))
+      .orderBy(asc(timeSlots.startTime));
+  } catch (error) {
+    console.error('Error in getTimeSlots:', error);
+    return [];
+  }
+}
+
+export async function addTimeSlot(startTime: string, endTime: string) {
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Unauthorized');
+
+    // Format label like "09:35 - 10:30"
+    const label = `${startTime} - ${endTime}`;
+
+    const [newSlot] = await db
+      .insert(timeSlots)
+      .values({
+        userId: user.id,
+        label,
+        startTime,
+        endTime,
+      })
+      .returning();
+
+    revalidatePath('/dashboard/settings');
+    revalidatePath('/dashboard/timetable');
+
+    return { success: true, timeSlot: newSlot };
+  } catch (error: any) {
+    console.error('Error in addTimeSlot:', error);
+    return { success: false, error: error.message || 'Failed to add time slot.' };
+  }
+}
+
+export async function deleteTimeSlot(id: string) {
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Unauthorized');
+
+    await db.delete(timeSlots).where(eq(timeSlots.id, id));
+
+    revalidatePath('/dashboard/settings');
+    revalidatePath('/dashboard/timetable');
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error in deleteTimeSlot:', error);
+    return { success: false, error: error.message || 'Failed to delete time slot.' };
   }
 }

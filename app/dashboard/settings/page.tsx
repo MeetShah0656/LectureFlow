@@ -15,6 +15,9 @@ import {
   getProfessors,
   addProfessor,
   deleteProfessor,
+  getTimeSlots,
+  addTimeSlot,
+  deleteTimeSlot,
 } from './actions';
 import {
   getUniversities,
@@ -24,7 +27,7 @@ import {
   getClasses,
   getBatches,
 } from '@/app/onboarding/actions';
-import { User, Bell, Check, Loader2, GraduationCap, Sparkles, Plus, Trash2, BookOpen } from 'lucide-react';
+import { User, Bell, Check, Loader2, GraduationCap, Sparkles, Plus, Trash2, BookOpen, Clock } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function SettingsPage() {
@@ -61,13 +64,18 @@ export default function SettingsPage() {
   // Custom management states
   const [customSubjects, setCustomSubjects] = React.useState<any[]>([]);
   const [professorsList, setProfessorsList] = React.useState<any[]>([]);
+  const [timeSlotsList, setTimeSlotsList] = React.useState<any[]>([]);
   
   const [newSubName, setNewSubName] = React.useState('');
   const [newSubCode, setNewSubCode] = React.useState('');
   const [newProfName, setNewProfName] = React.useState('');
+  
+  const [newSlotStart, setNewSlotStart] = React.useState('09:00');
+  const [newSlotEnd, setNewSlotEnd] = React.useState('09:55');
 
   const [addingSubject, setAddingSubject] = React.useState(false);
   const [addingProfessor, setAddingProfessor] = React.useState(false);
+  const [addingSlot, setAddingSlot] = React.useState(false);
 
   // Synchronous change handlers to update downstream selections
   const handleUnivChange = async (val: string) => {
@@ -197,12 +205,14 @@ export default function SettingsPage() {
 
           await Promise.all(promises);
 
-          const [subjectsData, professorsData] = await Promise.all([
+          const [subjectsData, professorsData, timeSlotsData] = await Promise.all([
             getCustomSubjects(),
             getProfessors(),
+            getTimeSlots(),
           ]);
           setCustomSubjects(subjectsData);
           setProfessorsList(professorsData);
+          setTimeSlotsList(timeSlotsData);
         }
       } catch (err) {
         console.error('Failed to load settings', err);
@@ -317,6 +327,39 @@ export default function SettingsPage() {
         setProfessorsList((prev) => prev.filter((p) => p.id !== id));
       } else {
         alert(res.error || 'Failed to delete professor.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'An error occurred.');
+    }
+  };
+
+  // Manage Time Slots Handlers
+  const handleAddTimeSlot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSlotStart || !newSlotEnd) return;
+    setAddingSlot(true);
+    try {
+      const res = await addTimeSlot(newSlotStart, newSlotEnd);
+      if (res.success && res.timeSlot) {
+        setTimeSlotsList((prev) => [...prev, res.timeSlot].sort((a, b) => a.startTime.localeCompare(b.startTime)));
+      } else {
+        alert(res.error || 'Failed to add time slot.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'An error occurred.');
+    } finally {
+      setAddingSlot(false);
+    }
+  };
+
+  const handleDeleteTimeSlot = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this time slot?')) return;
+    try {
+      const res = await deleteTimeSlot(id);
+      if (res.success) {
+        setTimeSlotsList((prev) => prev.filter((s) => s.id !== id));
+      } else {
+        alert(res.error || 'Failed to delete time slot.');
       }
     } catch (err: any) {
       alert(err.message || 'An error occurred.');
@@ -635,6 +678,70 @@ export default function SettingsPage() {
                       variant="ghost"
                       size="icon"
                       onClick={() => handleDeleteProfessor(prof.id)}
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      type="button"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Card 5: Manage Time Slots */}
+      <Card className="border-border/60 bg-card/40 backdrop-blur-md">
+        <CardHeader>
+          <CardTitle className="text-lg font-bold flex items-center space-x-2">
+            <Clock className="h-4 w-4 text-primary" />
+            <span>Manage Time Slots</span>
+          </CardTitle>
+          <CardDescription>Configure standard lecture time slots to easily pick from in your timetable.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <form onSubmit={handleAddTimeSlot} className="flex flex-col sm:flex-row gap-3 items-end sm:items-center">
+            <div className="flex-1 w-full flex gap-3">
+              <div className="flex-1 flex flex-col space-y-1">
+                <label className="text-xs text-muted-foreground font-semibold">Start Time</label>
+                <Input
+                  type="time"
+                  value={newSlotStart}
+                  onChange={(e) => setNewSlotStart(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="flex-1 flex flex-col space-y-1">
+                <label className="text-xs text-muted-foreground font-semibold">End Time</label>
+                <Input
+                  type="time"
+                  value={newSlotEnd}
+                  onChange={(e) => setNewSlotEnd(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            <Button type="submit" disabled={addingSlot} className="rounded-xl flex items-center space-x-1 shrink-0 w-full sm:w-auto h-10">
+              {addingSlot ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              <span>Add Slot</span>
+            </Button>
+          </form>
+
+          <div className="border border-border/30 rounded-xl overflow-hidden bg-background/20">
+            {timeSlotsList.length === 0 ? (
+              <div className="p-6 text-center text-sm text-muted-foreground">
+                No custom time slots configured. Add one above.
+              </div>
+            ) : (
+              <div className="divide-y divide-border/20 max-h-[220px] overflow-y-auto">
+                {timeSlotsList.map((slot) => (
+                  <div key={slot.id} className="flex items-center justify-between p-3.5 hover:bg-muted/10 transition-colors">
+                    <span className="text-sm font-semibold text-foreground">{slot.label}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDeleteTimeSlot(slot.id)}
                       className="h-8 w-8 text-muted-foreground hover:text-destructive"
                       type="button"
                     >

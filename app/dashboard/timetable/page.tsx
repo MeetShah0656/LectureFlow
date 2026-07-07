@@ -28,7 +28,7 @@ import {
   clearUserTimetable,
   type TimetableEntryData,
 } from './actions';
-import { getProfessors } from '../settings/actions';
+import { getProfessors, getTimeSlots } from '../settings/actions';
 
 const DAYS = [
   { value: 1, label: 'Monday', short: 'Mon' },
@@ -100,6 +100,8 @@ export default function TimetablePage() {
   const [entries, setEntries] = React.useState<TimetableEntry[]>([]);
   const [subjectsList, setSubjectsList] = React.useState<SubjectItem[]>([]);
   const [professorsList, setProfessorsList] = React.useState<any[]>([]);
+  const [timeSlotsList, setTimeSlotsList] = React.useState<any[]>([]);
+  const [selectedSlotId, setSelectedSlotId] = React.useState('');
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [selectedDay, setSelectedDay] = React.useState(getTodayDayOfWeek());
@@ -128,14 +130,19 @@ export default function TimetablePage() {
   // Load data on mount
   React.useEffect(() => {
     async function loadData() {
-      const [ttRes, subRes, profRes] = await Promise.all([
+      const [ttRes, subRes, profRes, timeSlotsRes] = await Promise.all([
         getUserTimetable(),
         getUserSubjects(),
         getProfessors(),
+        getTimeSlots(),
       ]);
 
       if (profRes) {
         setProfessorsList(profRes);
+      }
+
+      if (timeSlotsRes) {
+        setTimeSlotsList(timeSlotsRes);
       }
 
       if (ttRes.success && ttRes.entries) {
@@ -166,8 +173,18 @@ export default function TimetablePage() {
     setEditingEntry(null);
     setFormSubjectId(subjectsList[0]?.id || '');
     setFormDay(selectedDay <= 6 ? selectedDay : 1);
-    setFormStartTime('09:00');
-    setFormEndTime('09:55');
+    
+    if (timeSlotsList.length > 0) {
+      const firstSlot = timeSlotsList[0];
+      setSelectedSlotId(firstSlot.id);
+      setFormStartTime(firstSlot.startTime);
+      setFormEndTime(firstSlot.endTime);
+    } else {
+      setSelectedSlotId('');
+      setFormStartTime('09:00');
+      setFormEndTime('09:55');
+    }
+    
     setFormRoom('');
     setFormTeacher('');
     setFormError('');
@@ -182,6 +199,14 @@ export default function TimetablePage() {
     setFormDay(entry.dayOfWeek);
     setFormStartTime(entry.startTime);
     setFormEndTime(entry.endTime);
+    
+    const matchedSlot = timeSlotsList.find(s => s.startTime === entry.startTime && s.endTime === entry.endTime);
+    if (matchedSlot) {
+      setSelectedSlotId(matchedSlot.id);
+    } else {
+      setSelectedSlotId('');
+    }
+    
     setFormRoom(entry.room || '');
     setFormTeacher(entry.teacher || '');
     setFormError('');
@@ -592,24 +617,51 @@ export default function TimetablePage() {
             ))}
           </Select>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col space-y-1.5">
-              <label className="text-sm font-medium text-foreground/80">Start Time</label>
-              <Input
-                type="time"
-                value={formStartTime}
-                onChange={(e) => setFormStartTime(e.target.value)}
-              />
+          {timeSlotsList.length === 0 ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col space-y-1.5">
+                <label className="text-sm font-medium text-foreground/80">Start Time</label>
+                <Input
+                  type="time"
+                  value={formStartTime}
+                  onChange={(e) => setFormStartTime(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col space-y-1.5">
+                <label className="text-sm font-medium text-foreground/80">End Time</label>
+                <Input
+                  type="time"
+                  value={formEndTime}
+                  onChange={(e) => setFormEndTime(e.target.value)}
+                />
+              </div>
+              <span className="col-span-2 text-[9px] text-muted-foreground leading-none mt-0.5">Tip: Configure custom time slots in Settings to select them from a dropdown.</span>
             </div>
+          ) : (
             <div className="flex flex-col space-y-1.5">
-              <label className="text-sm font-medium text-foreground/80">End Time</label>
-              <Input
-                type="time"
-                value={formEndTime}
-                onChange={(e) => setFormEndTime(e.target.value)}
-              />
+              <Select
+                label="Time Slot Selection"
+                value={selectedSlotId}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedSlotId(val);
+                  const matched = timeSlotsList.find(s => s.id === val);
+                  if (matched) {
+                    setFormStartTime(matched.startTime);
+                    setFormEndTime(matched.endTime);
+                  }
+                }}
+                required
+              >
+                <option value="">Select Time Slot</option>
+                {timeSlotsList.map((slot) => (
+                  <option key={slot.id} value={slot.id}>
+                    {slot.label}
+                  </option>
+                ))}
+              </Select>
             </div>
-          </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col space-y-1.5">

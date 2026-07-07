@@ -182,6 +182,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   }),
   notifications: many(notifications),
   professors: many(professors),
+  timeSlots: many(timeSlots),
 }));
 
 // 8. Subjects Table
@@ -357,6 +358,27 @@ export const professors = pgTable('professors', {
 export const professorsRelations = relations(professors, ({ one }) => ({
   user: one(users, {
     fields: [professors.userId],
+    references: [users.id],
+  }),
+}));
+
+// 15. Time Slots Table
+export const timeSlots = pgTable('time_slots', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  label: text('label').notNull(), // e.g. "09:35 - 10:30"
+  startTime: text('start_time').notNull(), // "09:35"
+  endTime: text('end_time').notNull(), // "10:30"
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('time_slots_user_idx').on(table.userId),
+]);
+
+export const timeSlotsRelations = relations(timeSlots, ({ one }) => ({
+  user: one(users, {
+    fields: [timeSlots.userId],
     references: [users.id],
   }),
 }));
