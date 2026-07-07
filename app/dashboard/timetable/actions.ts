@@ -1,7 +1,7 @@
 'use server';
 
 import { db } from '@/database/db';
-import { users, subjects, timetable } from '@/database/schema';
+import { users, subjects, timetable, batches } from '@/database/schema';
 import { createClient } from '@/lib/supabase/server';
 import { eq, and, or, asc, isNull } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
@@ -185,6 +185,23 @@ export async function scanAndAddTimetable(formData: FormData) {
     const file = formData.get('file') as File;
     if (!file) throw new Error('No file uploaded.');
 
+    // Fetch batch name if the user belongs to a lab batch
+    let batchName = '';
+    if (user.batchId) {
+      const dbBatch = await db.query.batches.findFirst({
+        where: eq(batches.id, user.batchId),
+      });
+      if (dbBatch) {
+        batchName = dbBatch.name;
+      }
+    }
+
+    const batchInstructions = batchName
+      ? `The student belongs to **${batchName}**. For any practicals/labs/workshops that are split by batches (e.g. "CN Lab (Batch A)", "DBMS Lab (B)", "ADA Lab (Batch C)"):
+- If the slot belongs to **${batchName}**, include it in the output and mark its "isBatchSpecific" field as true.
+- If it belongs to a different batch (e.g. Batch B, Batch C), DISCARD it completely. Do not include it.`
+      : `The student does not belong to any specific lab batch. For batch-split classes, extract them normally, and set "isBatchSpecific" as false.`;
+
     const systemPrompt = `Analyze the provided college timetable document (image or PDF).
 Extract all schedule slots. Match each class slot to this JSON structure:
 [
@@ -195,9 +212,13 @@ Extract all schedule slots. Match each class slot to this JSON structure:
     "startTime": "string", // "HH:MM" 24h format (e.g. "09:00" or "14:30")
     "endTime": "string",   // "HH:MM" 24h format (e.g. "09:55" or "15:25")
     "room": "string",      // Room/Lab name (e.g. "Room 403" or "Lab 3"), or null
-    "teacher": "string"    // Teacher name (e.g. "Prof. A. N. Shah"), or null
+    "teacher": "string",   // Teacher name (e.g. "Prof. A. N. Shah"), or null
+    "isBatchSpecific": boolean // true if it is a practical/lab session meant only for a specific batch, false otherwise
   }
 ]
+
+${batchInstructions}
+
 Return ONLY a valid JSON array matching this format. Do not wrap in markdown or add explanations.`;
 
     const userPrompt = "Identify the weekly schedule classes, start times, end times, days, and subjects.";
@@ -256,7 +277,7 @@ Return ONLY a valid JSON array matching this format. Do not wrap in markdown or 
         .values({
           userId: user.id,
           classId: user.classId || null,
-          batchId: user.batchId || null,
+          batchId: slot.isBatchSpecific ? (user.batchId || null) : null,
           subjectId,
           dayOfWeek: Number(slot.dayOfWeek),
           startTime: slot.startTime,
