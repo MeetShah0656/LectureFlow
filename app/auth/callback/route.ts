@@ -24,9 +24,18 @@ export async function GET(request: Request) {
         });
 
         if (!profile || !profile.onboardingCompleted) {
-          return NextResponse.redirect(`${origin}/onboarding`);
+          const redirectResponse = NextResponse.redirect(`${origin}/onboarding`);
+          redirectResponse.cookies.set('onboarding_completed', 'false', { path: '/' });
+          return redirectResponse;
         }
-        return NextResponse.redirect(`${origin}${next}`);
+        const redirectResponse = NextResponse.redirect(`${origin}${next}`);
+        redirectResponse.cookies.set('onboarding_completed', 'true', {
+          maxAge: 60 * 60 * 24 * 365,
+          path: '/',
+          sameSite: 'lax',
+          secure: process.env.NODE_ENV === 'production',
+        });
+        return redirectResponse;
       } catch (dbError) {
         console.error('Database check error during login callback:', dbError);
         // Fall back to onboarding if database is not reachable (or before table creations)

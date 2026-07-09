@@ -88,6 +88,16 @@ export async function submitOnboarding(data: OnboardingData) {
     notificationsEnabled: true,
   }).onConflictDoNothing({ target: settings.userId });
 
+  // Set the onboarding completed cache cookie
+  const { cookies } = await import('next/headers');
+  const cookieStore = await cookies();
+  cookieStore.set('onboarding_completed', 'true', {
+    maxAge: 60 * 60 * 24 * 365, // 1 year
+    path: '/',
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+  });
+
   revalidatePath('/dashboard');
   revalidatePath('/');
   

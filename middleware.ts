@@ -52,32 +52,59 @@ export async function middleware(request: NextRequest) {
     if (isDashboardPage || isOnboardingPage) {
       const url = request.nextUrl.clone();
       url.pathname = '/auth/login';
-      return NextResponse.redirect(url);
+      const redirectResponse = NextResponse.redirect(url);
+      // Clear onboarding status cookie on logout/unauthenticated
+      redirectResponse.cookies.delete('onboarding_completed');
+      return redirectResponse;
     }
     return response;
   }
 
-  // If user is authenticated, check their onboarding state
-  // We can fetch onboarding status from our Supabase table.
-  const { data: profile } = await supabase
-    .from('users')
-    .select('onboarding_completed')
-    .eq('id', user.id)
-    .maybeSingle();
+  // ─── Performance Cache Check ───────────────────────────────────────────────
+  // We check a cookie to see if onboarding is completed.
+  // This completely eliminates one database query per page navigation!
+  let onboardingCompleted = request.cookies.get('onboarding_completed')?.value === 'true';
 
-  const onboardingCompleted = profile?.onboarding_completed ?? false;
+  if (user && !onboardingCompleted) {
+    const { data: profile } = await supabase
+      .from('users')
+      .select('onboarding_completed')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    onboardingCompleted = profile?.onboarding_completed ?? false;
+
+    if (onboardingCompleted) {
+      // Cache this value in a cookie so subsequent page navigations bypass the DB query
+      response.cookies.set('onboarding_completed', 'true', {
+        maxAge: 60 * 60 * 24 * 365, // 1 year
+        path: '/',
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+      });
+    }
+  }
 
   if (!onboardingCompleted) {
     if (isDashboardPage && !isOnboardingPage) {
       const url = request.nextUrl.clone();
       url.pathname = '/onboarding';
-      return NextResponse.redirect(url);
+      const redirectResponse = NextResponse.redirect(url);
+      redirectResponse.cookies.set('onboarding_completed', 'false', { path: '/' });
+      return redirectResponse;
     }
   } else {
     if (isAuthPage || isOnboardingPage) {
       const url = request.nextUrl.clone();
       url.pathname = '/dashboard';
-      return NextResponse.redirect(url);
+      const redirectResponse = NextResponse.redirect(url);
+      redirectResponse.cookies.set('onboarding_completed', 'true', {
+        maxAge: 60 * 60 * 24 * 365,
+        path: '/',
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+      });
+      return redirectResponse;
     }
   }
 
@@ -85,7 +112,14 @@ export async function middleware(request: NextRequest) {
   if (request.nextUrl.pathname === '/' && user && onboardingCompleted) {
     const url = request.nextUrl.clone();
     url.pathname = '/dashboard';
-    return NextResponse.redirect(url);
+    const redirectResponse = NextResponse.redirect(url);
+    redirectResponse.cookies.set('onboarding_completed', 'true', {
+      maxAge: 60 * 60 * 24 * 365,
+      path: '/',
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+    });
+    return redirectResponse;
   }
 
   return response;
