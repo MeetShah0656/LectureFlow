@@ -206,6 +206,7 @@ export const subjectsRelations = relations(subjects, ({ one, many }) => ({
   }),
   timetable: many(timetable),
   syllabus: many(syllabus),
+  lectureOverrides: many(lectureOverrides),
 }));
 
 // 9. Timetable Table
@@ -291,6 +292,7 @@ export const lectureOverrides = pgTable('lecture_overrides', {
     .references(() => timetable.id, { onDelete: 'cascade' })
     .notNull(),
   date: date('date').notNull(), // YYYY-MM-DD
+  subjectId: uuid('subject_id').references(() => subjects.id, { onDelete: 'set null' }), // overrides the lecture's subject for this date
   teacher: text('teacher'),     // overrides timetable.teacher for this date
   room: text('room'),           // overrides timetable.room for this date
   notes: text('notes'),         // optional note, e.g. "Substitute by Dr. Mehta"
@@ -311,6 +313,10 @@ export const lectureOverridesRelations = relations(lectureOverrides, ({ one }) =
   timetable: one(timetable, {
     fields: [lectureOverrides.timetableId],
     references: [timetable.id],
+  }),
+  subject: one(subjects, {
+    fields: [lectureOverrides.subjectId],
+    references: [subjects.id],
   }),
 }));
 

@@ -3,7 +3,7 @@
 import { db } from '@/database/db';
 import { users, subjects, timetable, attendance, lectureOverrides } from '@/database/schema';
 import { createClient } from '@/lib/supabase/server';
-import { eq, and, or, asc, desc, sql, isNull, count } from 'drizzle-orm';
+import { eq, and, or, asc, desc, isNull, inArray } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 // Helper to get auth user profile
@@ -19,8 +19,8 @@ async function getAuthUser() {
   return dbUser ? { authId: user.id, ...dbUser } : null;
 }
 
-// Get today's or a previous date's timetable entries with their attendance status
-// and any per-day lecture overrides (teacher / room / notes)
+// Get today's or a previous date's timetable entries with attendance status,
+// per-day overrides (teacher / room / notes / subject)
 export async function getTodayAttendance(dateStr?: string) {
   try {
     const user = await getAuthUser();
@@ -31,9 +31,7 @@ export async function getTodayAttendance(dateStr?: string) {
     let dayOfWeek: number;
 
     if (targetDateStr) {
-      // Parse YYYY-MM-DD
       const dateParts = targetDateStr.split('-').map(Number);
-      // Create local date to avoid local offset shifting
       const d = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
       const jsDay = d.getDay();
       dayOfWeek = jsDay === 0 ? 7 : jsDay;
@@ -41,64 +39,55 @@ export async function getTodayAttendance(dateStr?: string) {
       const d = new Date();
       const jsDay = d.getDay();
       dayOfWeek = jsDay === 0 ? 7 : jsDay;
-      targetDateStr = d.toISOString().split('T')[0]; // "YYYY-MM-DD"
+      targetDateStr = d.toISOString().split('T')[0];
     }
 
-    // Fetch user's timetable for the target day of week
     const userConditions = [eq(timetable.userId, user.id)];
     if (user.classId) {
       userConditions.push(
-        and(
-          eq(timetable.classId, user.classId),
-          isNull(timetable.userId)
-        )!
+        and(eq(timetable.classId, user.classId), isNull(timetable.userId))!
       );
     }
 
     const [todayEntries, todayRecords, dayOverrides] = await Promise.all([
-      // Timetable entries for this weekday
       db.query.timetable.findMany({
-        where: and(
-          eq(timetable.dayOfWeek, dayOfWeek),
-          or(...userConditions)
-        ),
+        where: and(eq(timetable.dayOfWeek, dayOfWeek), or(...userConditions)),
         with: { subject: true },
         orderBy: [asc(timetable.startTime)],
       }),
-      // Attendance records for the target date
-      db
-        .select()
-        .from(attendance)
-        .where(
-          and(
-            eq(attendance.userId, user.id),
-            eq(attendance.date, targetDateStr)
-          )
-        ),
-      // Lecture overrides for the target date
-      db
-        .select()
-        .from(lectureOverrides)
-        .where(
-          and(
-            eq(lectureOverrides.userId, user.id),
-            eq(lectureOverrides.date, targetDateStr)
-          )
-        ),
+      db.select().from(attendance).where(
+        and(eq(attendance.userId, user.id), eq(attendance.date, targetDateStr))
+      ),
+      db.select().from(lectureOverrides).where(
+        and(eq(lectureOverrides.userId, user.id), eq(lectureOverrides.date, targetDateStr))
+      ),
     ]);
 
-    // Merge timetable with attendance status + overrides
+    // Resolve any override subjects
+    const overrideSubjectIds = [
+      ...new Set(dayOverrides.map((o) => o.subjectId).filter((id): id is string => !!id)),
+    ];
+    const overrideSubjectList =
+      overrideSubjectIds.length > 0
+        ? await db.select().from(subjects).where(inArray(subjects.id, overrideSubjectIds))
+        : [];
+
+    // Merge timetable with attendance + overrides
     const entriesWithStatus = todayEntries.map((entry) => {
       const record = todayRecords.find((r) => r.timetableId === entry.id);
       const override = dayOverrides.find((o) => o.timetableId === entry.id);
+      const overrideSubject = override?.subjectId
+        ? (overrideSubjectList.find((s) => s.id === override.subjectId) ?? null)
+        : null;
       return {
         ...entry,
         attendanceId: record?.id || null,
-        attendanceStatus: record?.status || null, // 'present', 'absent', null
-        // Override fields (null means use default from timetable)
+        attendanceStatus: record?.status || null,
         overrideTeacher: override?.teacher ?? null,
         overrideRoom: override?.room ?? null,
         overrideNotes: override?.notes ?? null,
+        overrideSubjectId: override?.subjectId ?? null,
+        overrideSubject,
         hasOverride: !!override,
       };
     });
@@ -121,7 +110,6 @@ export async function markAttendance(
     const user = await getAuthUser();
     if (!user) throw new Error('Unauthorized');
 
-    // Check if attendance record already exists
     const existing = await db.query.attendance.findFirst({
       where: and(
         eq(attendance.userId, user.id),
@@ -131,23 +119,13 @@ export async function markAttendance(
     });
 
     if (existing) {
-      // Update existing record
-      await db.update(attendance)
-        .set({ status })
-        .where(eq(attendance.id, existing.id));
+      await db.update(attendance).set({ status }).where(eq(attendance.id, existing.id));
     } else {
-      // Create new record
-      await db.insert(attendance).values({
-        userId: user.id,
-        timetableId,
-        date,
-        status,
-      });
+      await db.insert(attendance).values({ userId: user.id, timetableId, date, status });
     }
 
     revalidatePath('/dashboard/attendance');
     revalidatePath('/dashboard');
-
     return { success: true };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to mark attendance.';
@@ -176,7 +154,6 @@ export async function unmarkAttendance(timetableId: string, date: string) {
 
     revalidatePath('/dashboard/attendance');
     revalidatePath('/dashboard');
-
     return { success: true };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to unmark attendance.';
@@ -185,11 +162,11 @@ export async function unmarkAttendance(timetableId: string, date: string) {
   }
 }
 
-// Save (upsert) a per-day lecture override
+// Save (upsert) a per-day lecture override (teacher, room, notes, and/or subject)
 export async function saveLectureOverride(
   timetableId: string,
   date: string,
-  data: { teacher?: string; room?: string; notes?: string }
+  data: { teacher?: string; room?: string; notes?: string; subjectId?: string }
 ) {
   try {
     const user = await getAuthUser();
@@ -203,31 +180,26 @@ export async function saveLectureOverride(
       ),
     });
 
-    const now = new Date();
+    const payload = {
+      teacher: data.teacher?.trim() || null,
+      room: data.room?.trim() || null,
+      notes: data.notes?.trim() || null,
+      subjectId: data.subjectId || null,
+      updatedAt: new Date(),
+    };
 
     if (existing) {
-      await db
-        .update(lectureOverrides)
-        .set({
-          teacher: data.teacher ?? null,
-          room: data.room ?? null,
-          notes: data.notes ?? null,
-          updatedAt: now,
-        })
-        .where(eq(lectureOverrides.id, existing.id));
+      await db.update(lectureOverrides).set(payload).where(eq(lectureOverrides.id, existing.id));
     } else {
       await db.insert(lectureOverrides).values({
         userId: user.id,
         timetableId,
         date,
-        teacher: data.teacher ?? null,
-        room: data.room ?? null,
-        notes: data.notes ?? null,
+        ...payload,
       });
     }
 
     revalidatePath('/dashboard/attendance');
-
     return { success: true };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to save lecture override.';
@@ -236,7 +208,7 @@ export async function saveLectureOverride(
   }
 }
 
-// Delete a per-day lecture override (resets lecture to its timetable defaults)
+// Delete a per-day lecture override (resets lecture to timetable defaults)
 export async function deleteLectureOverride(timetableId: string, date: string) {
   try {
     const user = await getAuthUser();
@@ -255,7 +227,6 @@ export async function deleteLectureOverride(timetableId: string, date: string) {
     }
 
     revalidatePath('/dashboard/attendance');
-
     return { success: true };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to reset lecture override.';
@@ -264,7 +235,7 @@ export async function deleteLectureOverride(timetableId: string, date: string) {
   }
 }
 
-// Get per-subject attendance statistics
+// Get per-subject attendance statistics — respects subject overrides
 export async function getAttendanceStats() {
   try {
     const user = await getAuthUser();
@@ -274,42 +245,37 @@ export async function getAttendanceStats() {
     const userConditions = [eq(timetable.userId, user.id)];
     if (user.classId) {
       userConditions.push(
-        and(
-          eq(timetable.classId, user.classId),
-          isNull(timetable.userId)
-        )!
+        and(eq(timetable.classId, user.classId), isNull(timetable.userId))!
       );
     }
 
-    // Run subjects and timetable queries in parallel
-    const [semesterSubjects, userTimetable] = await Promise.all([
-      db
-        .select()
-        .from(subjects)
-        .where(eq(subjects.semesterId, user.semesterId))
-        .orderBy(asc(subjects.name)),
-      db.query.timetable.findMany({
-        where: or(...userConditions),
-      }),
+    const [semesterSubjects, userTimetable, allOverrides] = await Promise.all([
+      db.select().from(subjects).where(eq(subjects.semesterId, user.semesterId)).orderBy(asc(subjects.name)),
+      db.query.timetable.findMany({ where: or(...userConditions) }),
+      // Fetch overrides that have a subject override — used to remap attendance counts
+      db.select().from(lectureOverrides).where(eq(lectureOverrides.userId, user.id)),
     ]);
 
     const timetableIds = userTimetable.map((t) => t.id);
 
-    // Get all attendance records for the user
-    const allRecords = timetableIds.length > 0
-      ? await db
-          .select()
-          .from(attendance)
-          .where(eq(attendance.userId, user.id))
-      : [];
+    const allRecords =
+      timetableIds.length > 0
+        ? await db.select().from(attendance).where(eq(attendance.userId, user.id))
+        : [];
 
-    // Build per-subject stats
+    // Helper: resolve the effective subjectId for a given attendance record
+    // If there's an override with a different subjectId for that (timetableId, date), use it
+    function effectiveSubjectId(record: { timetableId: string; date: string }): string {
+      const override = allOverrides.find(
+        (o) => o.timetableId === record.timetableId && o.date === record.date && o.subjectId
+      );
+      if (override?.subjectId) return override.subjectId;
+      return userTimetable.find((t) => t.id === record.timetableId)?.subjectId ?? '';
+    }
+
     const subjectStats = semesterSubjects.map((sub) => {
-      const subTimetableIds = userTimetable
-        .filter((t) => t.subjectId === sub.id)
-        .map((t) => t.id);
-
-      const subRecords = allRecords.filter((r) => subTimetableIds.includes(r.timetableId));
+      // Count all attendance records whose effective subject is this subject
+      const subRecords = allRecords.filter((r) => effectiveSubjectId(r) === sub.id);
       const presentCount = subRecords.filter((r) => r.status === 'present').length;
       const absentCount = subRecords.filter((r) => r.status === 'absent').length;
       const totalMarked = presentCount + absentCount;
@@ -326,7 +292,6 @@ export async function getAttendanceStats() {
       };
     });
 
-    // Overall stats
     const totalPresent = subjectStats.reduce((sum, s) => sum + s.present, 0);
     const totalAbsent = subjectStats.reduce((sum, s) => sum + s.absent, 0);
     const totalMarked = totalPresent + totalAbsent;
@@ -335,12 +300,7 @@ export async function getAttendanceStats() {
     return {
       success: true,
       subjects: subjectStats,
-      overall: {
-        present: totalPresent,
-        absent: totalAbsent,
-        total: totalMarked,
-        percentage: overallPercentage,
-      },
+      overall: { present: totalPresent, absent: totalAbsent, total: totalMarked, percentage: overallPercentage },
       target: user.attendanceRequirement,
     };
   } catch (error: unknown) {
@@ -350,53 +310,59 @@ export async function getAttendanceStats() {
   }
 }
 
-// Get attendance history with filtering
+// Get attendance history — includes override subject info for past records
 export async function getAttendanceHistory(subjectId?: string) {
   try {
     const user = await getAuthUser();
     if (!user) return { success: false, error: 'Unauthorized' };
 
-    // Get all attendance records, most recent first
     const records = await db.query.attendance.findMany({
       where: eq(attendance.userId, user.id),
-      with: {
-        timetable: {
-          with: { subject: true },
-        },
-      },
+      with: { timetable: { with: { subject: true } } },
       orderBy: [desc(attendance.date), desc(attendance.createdAt)],
       limit: 100,
     });
 
-    // Filter by subject if specified
-    const filtered = subjectId
-      ? records.filter((r) => r.timetable?.subject?.id === subjectId)
-      : records;
+    // Fetch all overrides for this user
+    const allOverrides =
+      records.length > 0
+        ? await db.select().from(lectureOverrides).where(eq(lectureOverrides.userId, user.id))
+        : [];
 
-    // Fetch overrides for the dates present in history so we can show
-    // the actual teacher/room that was in effect on each day
-    const historyDates = [...new Set(filtered.map((r) => r.date))];
-    const allOverrides = historyDates.length > 0
-      ? await db
-          .select()
-          .from(lectureOverrides)
-          .where(eq(lectureOverrides.userId, user.id))
-      : [];
+    // Resolve unique override subject IDs
+    const overrideSubjectIds = [
+      ...new Set(allOverrides.map((o) => o.subjectId).filter((id): id is string => !!id)),
+    ];
+    const overrideSubjectList =
+      overrideSubjectIds.length > 0
+        ? await db.select().from(subjects).where(inArray(subjects.id, overrideSubjectIds))
+        : [];
 
-    const recordsWithOverrides = filtered.map((r) => {
-      const override = allOverrides.find(
-        (o) => o.timetableId === r.timetableId && o.date === r.date
-      );
+    const enriched = records.map((r) => {
+      const override = allOverrides.find((o) => o.timetableId === r.timetableId && o.date === r.date);
+      const overrideSubject = override?.subjectId
+        ? (overrideSubjectList.find((s) => s.id === override.subjectId) ?? null)
+        : null;
       return {
         ...r,
         overrideTeacher: override?.teacher ?? null,
         overrideRoom: override?.room ?? null,
         overrideNotes: override?.notes ?? null,
+        overrideSubjectId: override?.subjectId ?? null,
+        overrideSubject,
         hasOverride: !!override,
       };
     });
 
-    return { success: true, records: recordsWithOverrides };
+    // Filter by effective subject (uses override subject if set)
+    const filtered = subjectId
+      ? enriched.filter((r) => {
+          const effectiveSub = r.overrideSubjectId ?? r.timetable?.subject?.id;
+          return effectiveSub === subjectId;
+        })
+      : enriched;
+
+    return { success: true, records: filtered };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch history.';
     console.error('Error in getAttendanceHistory:', error);

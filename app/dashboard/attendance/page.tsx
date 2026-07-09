@@ -3,7 +3,6 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { AttendanceChart } from '@/components/charts/attendance-chart';
 import {
@@ -13,7 +12,6 @@ import {
   MapPin,
   GraduationCap,
   TrendingUp,
-  TrendingDown,
   AlertCircle,
   Sparkles,
   Calendar,
@@ -25,6 +23,7 @@ import {
   Save,
   StickyNote,
   X,
+  BookOpen,
 } from 'lucide-react';
 import {
   getTodayAttendance,
@@ -36,6 +35,14 @@ import {
   deleteLectureOverride,
 } from './actions';
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface SubjectInfo {
+  id: string;
+  name: string;
+  code: string | null;
+}
+
 interface TodayEntry {
   id: string;
   subjectId: string;
@@ -44,17 +51,14 @@ interface TodayEntry {
   endTime: string;
   room: string | null;
   teacher: string | null;
-  subject: {
-    id: string;
-    name: string;
-    code: string | null;
-  };
+  subject: SubjectInfo;
   attendanceId: string | null;
   attendanceStatus: string | null;
-  // Override fields
   overrideTeacher: string | null;
   overrideRoom: string | null;
   overrideNotes: string | null;
+  overrideSubjectId: string | null;
+  overrideSubject: SubjectInfo | null;
   hasOverride: boolean;
 }
 
@@ -76,18 +80,18 @@ interface HistoryRecord {
   overrideTeacher: string | null;
   overrideRoom: string | null;
   overrideNotes: string | null;
+  overrideSubjectId: string | null;
+  overrideSubject: SubjectInfo | null;
   timetable: {
     startTime: string;
     endTime: string;
     teacher: string | null;
     room: string | null;
-    subject: {
-      id: string;
-      name: string;
-      code: string | null;
-    };
+    subject: SubjectInfo;
   };
 }
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatTime(time: string): string {
   const [h, m] = time.split(':').map(Number);
@@ -102,36 +106,43 @@ function formatDateLabel(dateStr: string): string {
   today.setHours(0, 0, 0, 0);
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-
   if (d.getTime() === today.getTime()) return 'Today';
   if (d.getTime() === yesterday.getTime()) return 'Yesterday';
-
   return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 type TabId = 'today' | 'stats' | 'history';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Inline Edit Panel for a single lecture card
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Inline Edit Panel ───────────────────────────────────────────────────────
+
 interface EditPanelProps {
   entry: TodayEntry;
   date: string;
-  onSave: (entryId: string, data: { teacher: string; room: string; notes: string }) => Promise<void>;
+  allSubjects: SubjectInfo[];
+  onSave: (
+    entryId: string,
+    data: { teacher: string; room: string; notes: string; subjectId: string }
+  ) => Promise<void>;
   onReset: (entryId: string) => Promise<void>;
   onClose: () => void;
 }
 
-function LectureEditPanel({ entry, date, onSave, onReset, onClose }: EditPanelProps) {
+function LectureEditPanel({ entry, date, allSubjects, onSave, onReset, onClose }: EditPanelProps) {
   const [teacher, setTeacher] = React.useState(entry.overrideTeacher ?? entry.teacher ?? '');
   const [room, setRoom] = React.useState(entry.overrideRoom ?? entry.room ?? '');
   const [notes, setNotes] = React.useState(entry.overrideNotes ?? '');
+  // Default to override subject if set, else original subject
+  const [subjectId, setSubjectId] = React.useState(
+    entry.overrideSubjectId ?? entry.subjectId ?? ''
+  );
   const [saving, setSaving] = React.useState(false);
   const [resetting, setResetting] = React.useState(false);
 
+  const isSubjectChanged = subjectId !== entry.subjectId;
+
   const handleSave = async () => {
     setSaving(true);
-    await onSave(entry.id, { teacher, room, notes });
+    await onSave(entry.id, { teacher, room, notes, subjectId });
     setSaving(false);
     onClose();
   };
@@ -157,8 +168,38 @@ function LectureEditPanel({ entry, date, onSave, onReset, onClose }: EditPanelPr
           Edit for {formatDateLabel(date)} only
         </p>
 
+        {/* Subject override */}
+        <div className="space-y-1">
+          <label className="text-xs font-semibold text-muted-foreground flex items-center space-x-1">
+            <BookOpen className="h-3 w-3" />
+            <span>
+              Subject{' '}
+              {isSubjectChanged && (
+                <span className="text-amber-500 font-bold">(changed)</span>
+              )}
+            </span>
+          </label>
+          <select
+            value={subjectId}
+            onChange={(e) => setSubjectId(e.target.value)}
+            className="flex h-9 w-full rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-all"
+          >
+            {allSubjects.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}{s.code ? ` (${s.code})` : ''}
+                {s.id === entry.subjectId ? ' — default' : ''}
+              </option>
+            ))}
+          </select>
+          {isSubjectChanged && (
+            <p className="text-[11px] text-amber-600/80 dark:text-amber-400/80">
+              ⚠ Attendance will be counted under the new subject's statistics.
+            </p>
+          )}
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Teacher field */}
+          {/* Teacher */}
           <div className="space-y-1">
             <label className="text-xs font-semibold text-muted-foreground flex items-center space-x-1">
               <GraduationCap className="h-3 w-3" />
@@ -173,7 +214,7 @@ function LectureEditPanel({ entry, date, onSave, onReset, onClose }: EditPanelPr
             />
           </div>
 
-          {/* Room field */}
+          {/* Room */}
           <div className="space-y-1">
             <label className="text-xs font-semibold text-muted-foreground flex items-center space-x-1">
               <MapPin className="h-3 w-3" />
@@ -189,7 +230,7 @@ function LectureEditPanel({ entry, date, onSave, onReset, onClose }: EditPanelPr
           </div>
         </div>
 
-        {/* Notes field */}
+        {/* Notes */}
         <div className="space-y-1">
           <label className="text-xs font-semibold text-muted-foreground flex items-center space-x-1">
             <StickyNote className="h-3 w-3" />
@@ -199,7 +240,7 @@ function LectureEditPanel({ entry, date, onSave, onReset, onClose }: EditPanelPr
             type="text"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="e.g. Substitute lecture by Dr. Mehta"
+            placeholder='e.g. Substitute lecture by Dr. Mehta'
             className="flex h-9 w-full rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-all"
           />
         </div>
@@ -242,31 +283,31 @@ function LectureEditPanel({ entry, date, onSave, onReset, onClose }: EditPanelPr
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Main Attendance Page
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Main Page ───────────────────────────────────────────────────────────────
+
 export default function AttendancePage() {
   const [activeTab, setActiveTab] = React.useState<TabId>('today');
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Today tab state
+  // Today tab
   const [todayEntries, setTodayEntries] = React.useState<TodayEntry[]>([]);
   const [todayDate, setTodayDate] = React.useState('');
   const [markingId, setMarkingId] = React.useState<string | null>(null);
-  // Which card has edit panel open
   const [editingId, setEditingId] = React.useState<string | null>(null);
 
-  // Stats tab state
+  // Stats tab
   const [subjectStats, setSubjectStats] = React.useState<SubjectStat[]>([]);
-  const [overallStats, setOverallStats] = React.useState({ present: 0, absent: 0, total: 0, percentage: 0 });
+  const [overallStats, setOverallStats] = React.useState({
+    present: 0, absent: 0, total: 0, percentage: 0,
+  });
   const [targetPercentage, setTargetPercentage] = React.useState(75);
 
-  // History tab state
+  // History tab
   const [historyRecords, setHistoryRecords] = React.useState<HistoryRecord[]>([]);
   const [historyFilter, setHistoryFilter] = React.useState('');
 
-  // Load all data
+  // ── Load all data ──────────────────────────────────────────────────────────
   React.useEffect(() => {
     async function loadAll() {
       try {
@@ -301,52 +342,40 @@ export default function AttendancePage() {
     loadAll();
   }, []);
 
-  // Handle marking attendance
+  // ── Mark / unmark ─────────────────────────────────────────────────────────
   const handleMark = async (timetableId: string, status: 'present' | 'absent') => {
     setMarkingId(timetableId);
-
-    // Find current entry
     const entry = todayEntries.find((e) => e.id === timetableId);
     const currentStatus = entry?.attendanceStatus;
 
     if (currentStatus === status) {
-      // Unmark if same status tapped
       const res = await unmarkAttendance(timetableId, todayDate);
       if (res.success) {
         setTodayEntries((prev) =>
-          prev.map((e) =>
-            e.id === timetableId ? { ...e, attendanceStatus: null, attendanceId: null } : e
-          )
+          prev.map((e) => e.id === timetableId ? { ...e, attendanceStatus: null, attendanceId: null } : e)
         );
       }
     } else {
-      // Mark new status
       const res = await markAttendance(timetableId, todayDate, status);
       if (res.success) {
         setTodayEntries((prev) =>
-          prev.map((e) =>
-            e.id === timetableId ? { ...e, attendanceStatus: status } : e
-          )
+          prev.map((e) => e.id === timetableId ? { ...e, attendanceStatus: status } : e)
         );
       }
     }
 
-    // Refresh stats
-    const statsRes = await getAttendanceStats();
+    // Refresh stats & history
+    const [statsRes, historyRes] = await Promise.all([getAttendanceStats(), getAttendanceHistory()]);
     if (statsRes.success) {
       setSubjectStats((statsRes.subjects || []) as SubjectStat[]);
       setOverallStats(statsRes.overall || { present: 0, absent: 0, total: 0, percentage: 0 });
     }
-
-    // Refresh history
-    const historyRes = await getAttendanceHistory();
-    if (historyRes.success) {
-      setHistoryRecords((historyRes.records || []) as HistoryRecord[]);
-    }
+    if (historyRes.success) setHistoryRecords((historyRes.records || []) as HistoryRecord[]);
 
     setMarkingId(null);
   };
 
+  // ── Date change ───────────────────────────────────────────────────────────
   const handleDateChange = async (dateStr: string) => {
     if (!dateStr) return;
     setTodayDate(dateStr);
@@ -366,14 +395,19 @@ export default function AttendancePage() {
     }
   };
 
-  // Save an override for a specific entry
+  // ── Save override ─────────────────────────────────────────────────────────
   const handleSaveOverride = async (
     entryId: string,
-    data: { teacher: string; room: string; notes: string }
+    data: { teacher: string; room: string; notes: string; subjectId: string }
   ) => {
     const res = await saveLectureOverride(entryId, todayDate, data);
     if (res.success) {
-      // Update local state immediately
+      // Find the override subject from stats list so we can update local state
+      const overrideSubject =
+        data.subjectId
+          ? (subjectStats.find((s) => s.id === data.subjectId) ?? null)
+          : null;
+
       setTodayEntries((prev) =>
         prev.map((e) =>
           e.id === entryId
@@ -382,15 +416,26 @@ export default function AttendancePage() {
                 overrideTeacher: data.teacher || null,
                 overrideRoom: data.room || null,
                 overrideNotes: data.notes || null,
+                overrideSubjectId: data.subjectId || null,
+                overrideSubject: overrideSubject
+                  ? { id: overrideSubject.id, name: overrideSubject.name, code: overrideSubject.code }
+                  : null,
                 hasOverride: true,
               }
             : e
         )
       );
+
+      // Refresh stats so subject counts update immediately
+      const statsRes = await getAttendanceStats();
+      if (statsRes.success) {
+        setSubjectStats((statsRes.subjects || []) as SubjectStat[]);
+        setOverallStats(statsRes.overall || { present: 0, absent: 0, total: 0, percentage: 0 });
+      }
     }
   };
 
-  // Delete / reset an override for a specific entry
+  // ── Reset override ────────────────────────────────────────────────────────
   const handleResetOverride = async (entryId: string) => {
     const res = await deleteLectureOverride(entryId, todayDate);
     if (res.success) {
@@ -402,20 +447,31 @@ export default function AttendancePage() {
                 overrideTeacher: null,
                 overrideRoom: null,
                 overrideNotes: null,
+                overrideSubjectId: null,
+                overrideSubject: null,
                 hasOverride: false,
               }
             : e
         )
       );
+      // Refresh stats
+      const statsRes = await getAttendanceStats();
+      if (statsRes.success) {
+        setSubjectStats((statsRes.subjects || []) as SubjectStat[]);
+        setOverallStats(statsRes.overall || { present: 0, absent: 0, total: 0, percentage: 0 });
+      }
     }
   };
 
-  // Filter history by subject
+  // ── Filtered history ──────────────────────────────────────────────────────
   const filteredHistory = historyFilter
-    ? historyRecords.filter((r) => r.timetable?.subject?.id === historyFilter)
+    ? historyRecords.filter((r) => {
+        const effectiveSub = r.overrideSubjectId ?? r.timetable?.subject?.id;
+        return effectiveSub === historyFilter;
+      })
     : historyRecords;
 
-  // Loading
+  // ── Loading / Error ───────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
@@ -425,7 +481,6 @@ export default function AttendancePage() {
     );
   }
 
-  // Error
   if (error) {
     return (
       <div className="max-w-md mx-auto mt-12 text-center space-y-4 select-none">
@@ -490,7 +545,7 @@ export default function AttendancePage() {
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.2 }}
         >
-          {/* ======= TODAY TAB ======= */}
+          {/* ── TODAY TAB ── */}
           {activeTab === 'today' && (
             <div className="space-y-4">
               <Card className="border-border/60 bg-card/40 backdrop-blur-md">
@@ -500,7 +555,9 @@ export default function AttendancePage() {
                       <Calendar className="h-4 w-4 text-primary" />
                       <span>Select Attendance Date</span>
                     </h4>
-                    <p className="text-xs text-muted-foreground">Select a previous date to review or edit past attendance logs.</p>
+                    <p className="text-xs text-muted-foreground">
+                      Select a previous date to review or edit past attendance logs.
+                    </p>
                   </div>
                   <input
                     type="date"
@@ -532,9 +589,14 @@ export default function AttendancePage() {
                     const isMarking = markingId === entry.id;
                     const isEditing = editingId === entry.id;
 
-                    // Use override values if set, else default timetable values
+                    // Effective values shown on the card
+                    const displaySubject = entry.overrideSubject ?? entry.subject;
                     const displayTeacher = entry.overrideTeacher ?? entry.teacher;
                     const displayRoom = entry.overrideRoom ?? entry.room;
+                    const subjectChanged =
+                      entry.hasOverride &&
+                      entry.overrideSubjectId !== null &&
+                      entry.overrideSubjectId !== entry.subjectId;
 
                     return (
                       <motion.div
@@ -543,23 +605,24 @@ export default function AttendancePage() {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: idx * 0.04, duration: 0.25 }}
                       >
-                        <Card className={`border overflow-hidden transition-all ${
-                          isPresent
-                            ? 'border-success/30 bg-success/5'
-                            : isAbsent
-                            ? 'border-destructive/30 bg-destructive/5'
-                            : 'border-border/60 bg-card/40 backdrop-blur-md'
-                        }`}>
+                        <Card
+                          className={`border overflow-hidden transition-all ${
+                            isPresent
+                              ? 'border-success/30 bg-success/5'
+                              : isAbsent
+                              ? 'border-destructive/30 bg-destructive/5'
+                              : 'border-border/60 bg-card/40 backdrop-blur-md'
+                          }`}
+                        >
                           <CardContent className="p-4 md:p-5">
                             <div className="flex items-start justify-between gap-4">
-                              {/* Left: Class info */}
+                              {/* Left */}
                               <div className="flex-1 space-y-1.5 min-w-0">
-                                <div className="flex items-center space-x-2">
+                                <div className="flex items-center flex-wrap gap-2">
                                   <Clock className="h-3.5 w-3.5 text-primary shrink-0" />
                                   <span className="text-xs font-bold text-primary">
                                     {formatTime(entry.startTime)} — {formatTime(entry.endTime)}
                                   </span>
-                                  {/* Modified badge */}
                                   {entry.hasOverride && (
                                     <span className="inline-flex items-center space-x-1 text-[9px] font-bold uppercase tracking-wider bg-amber-500/15 border border-amber-500/25 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full">
                                       <Pencil className="h-2.5 w-2.5" />
@@ -568,28 +631,46 @@ export default function AttendancePage() {
                                   )}
                                 </div>
 
-                                <h4 className="text-base font-bold tracking-tight">{entry.subject.name}</h4>
+                                {/* Subject — show override if changed */}
+                                <div className="flex items-center flex-wrap gap-1.5">
+                                  <h4 className="text-base font-bold tracking-tight">
+                                    {displaySubject.name}
+                                  </h4>
+                                  {subjectChanged && (
+                                    <span className="text-[10px] text-muted-foreground line-through">
+                                      {entry.subject.name}
+                                    </span>
+                                  )}
+                                </div>
 
                                 <div className="flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
-                                  {entry.subject.code && (
+                                  {displaySubject.code && (
                                     <span className="font-bold uppercase bg-muted/60 px-1.5 py-0.5 rounded text-[10px]">
-                                      {entry.subject.code}
+                                      {displaySubject.code}
                                     </span>
                                   )}
                                   {displayRoom && (
-                                    <span className="flex items-center space-x-1">
+                                    <span
+                                      className={`flex items-center space-x-1 ${
+                                        entry.hasOverride && entry.overrideRoom
+                                          ? 'text-amber-600 dark:text-amber-400 font-semibold'
+                                          : ''
+                                      }`}
+                                    >
                                       <MapPin className="h-3 w-3" />
-                                      <span className={entry.hasOverride && entry.overrideRoom ? 'text-amber-600 dark:text-amber-400 font-semibold' : ''}>
-                                        {displayRoom}
-                                      </span>
+                                      <span>{displayRoom}</span>
                                     </span>
                                   )}
                                   {displayTeacher && (
-                                    <span className="flex items-center space-x-1">
+                                    <span
+                                      className={`flex items-center space-x-1 ${
+                                        entry.hasOverride && entry.overrideTeacher
+                                          ? 'text-amber-600 dark:text-amber-400 font-semibold'
+                                          : ''
+                                      }`}
+                                    >
                                       <GraduationCap className="h-3 w-3" />
-                                      <span className={entry.hasOverride && entry.overrideTeacher ? 'text-amber-600 dark:text-amber-400 font-semibold' : ''}>
-                                        {displayTeacher}
-                                      </span>
+                                      <span>{displayTeacher}</span>
                                     </span>
                                   )}
                                   {entry.overrideNotes && (
@@ -601,9 +682,8 @@ export default function AttendancePage() {
                                 </div>
                               </div>
 
-                              {/* Right: Edit + Mark buttons */}
+                              {/* Right: edit + mark buttons */}
                               <div className="flex items-center space-x-1.5 shrink-0">
-                                {/* Edit override button */}
                                 <button
                                   onClick={() => setEditingId(isEditing ? null : entry.id)}
                                   title="Edit this lecture for today"
@@ -645,12 +725,17 @@ export default function AttendancePage() {
                               </div>
                             </div>
 
-                            {/* Inline Edit Panel */}
+                            {/* Inline edit panel */}
                             <AnimatePresence>
                               {isEditing && (
                                 <LectureEditPanel
                                   entry={entry}
                                   date={todayDate}
+                                  allSubjects={subjectStats.map((s) => ({
+                                    id: s.id,
+                                    name: s.name,
+                                    code: s.code,
+                                  }))}
                                   onSave={handleSaveOverride}
                                   onReset={handleResetOverride}
                                   onClose={() => setEditingId(null)}
@@ -667,10 +752,9 @@ export default function AttendancePage() {
             </div>
           )}
 
-          {/* ======= STATS TAB ======= */}
+          {/* ── STATS TAB ── */}
           {activeTab === 'stats' && (
             <div className="space-y-6">
-              {/* Overall attendance card */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Card className="border-border/60 bg-card/40 backdrop-blur-md">
                   <CardHeader className="pb-2">
@@ -682,13 +766,15 @@ export default function AttendancePage() {
                   </CardHeader>
                   <CardContent className="flex flex-col items-center">
                     <AttendanceChart percentage={overallStats.percentage} />
-                    <div className={`mt-3 w-full p-2.5 rounded-xl text-center text-xs font-medium ${
-                      overallStats.percentage >= targetPercentage
-                        ? 'bg-success/10 border border-success/15 text-success'
-                        : overallStats.total === 0
-                        ? 'bg-muted border border-border text-muted-foreground'
-                        : 'bg-destructive/10 border border-destructive/15 text-destructive'
-                    }`}>
+                    <div
+                      className={`mt-3 w-full p-2.5 rounded-xl text-center text-xs font-medium ${
+                        overallStats.percentage >= targetPercentage
+                          ? 'bg-success/10 border border-success/15 text-success'
+                          : overallStats.total === 0
+                          ? 'bg-muted border border-border text-muted-foreground'
+                          : 'bg-destructive/10 border border-destructive/15 text-destructive'
+                      }`}
+                    >
                       {overallStats.total === 0
                         ? 'No attendance data yet. Start marking!'
                         : overallStats.percentage >= targetPercentage
@@ -698,7 +784,6 @@ export default function AttendancePage() {
                   </CardContent>
                 </Card>
 
-                {/* Quick stats */}
                 <Card className="border-border/60 bg-card/40 backdrop-blur-md">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-bold">Quick Stats</CardTitle>
@@ -725,19 +810,19 @@ export default function AttendancePage() {
                   </CardContent>
                 </Card>
 
-                {/* Subject count */}
                 <Card className="border-border/60 bg-card/40 backdrop-blur-md">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-bold">Subjects Tracked</CardTitle>
                   </CardHeader>
                   <CardContent className="flex flex-col items-center justify-center h-full pt-2">
                     <span className="text-4xl font-extrabold text-primary">{subjectStats.length}</span>
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold mt-1">Subjects</span>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold mt-1">
+                      Subjects
+                    </span>
                   </CardContent>
                 </Card>
               </div>
 
-              {/* Per-subject breakdown */}
               <Card className="border-border/60 bg-card/40 backdrop-blur-md">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm font-bold flex items-center space-x-2">
@@ -792,10 +877,9 @@ export default function AttendancePage() {
             </div>
           )}
 
-          {/* ======= HISTORY TAB ======= */}
+          {/* ── HISTORY TAB ── */}
           {activeTab === 'history' && (
             <div className="space-y-4">
-              {/* Filter */}
               <div className="max-w-xs">
                 <Select
                   label="Filter by Subject"
@@ -828,53 +912,77 @@ export default function AttendancePage() {
                   <CardContent className="p-0">
                     <div className="divide-y divide-border/30">
                       {filteredHistory.map((record) => {
+                        const effectiveSubject = record.overrideSubject ?? record.timetable?.subject;
+                        const originalSubject = record.timetable?.subject;
+                        const subjectSwapped =
+                          record.hasOverride &&
+                          record.overrideSubjectId &&
+                          record.overrideSubjectId !== originalSubject?.id;
                         const displayTeacher =
-                          (record as HistoryRecord).overrideTeacher ?? record.timetable?.teacher ?? null;
-                        const displayRoom =
-                          (record as HistoryRecord).overrideRoom ?? record.timetable?.room ?? null;
+                          record.overrideTeacher ?? record.timetable?.teacher ?? null;
+
                         return (
-                          <div key={record.id} className="flex items-center justify-between px-5 py-3.5">
+                          <div key={record.id} className="flex items-start justify-between px-5 py-3.5">
                             <div className="space-y-0.5 min-w-0 flex-1">
-                              <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                                <span className="text-sm font-semibold">{record.timetable?.subject?.name}</span>
-                                {record.timetable?.subject?.code && (
+                              <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
+                                <span className="text-sm font-semibold">{effectiveSubject?.name}</span>
+                                {effectiveSubject?.code && (
                                   <span className="text-[9px] font-bold text-muted-foreground uppercase bg-muted px-1.5 py-0.5 rounded">
-                                    {record.timetable.subject.code}
+                                    {effectiveSubject.code}
                                   </span>
                                 )}
-                                {(record as HistoryRecord).hasOverride && (
+                                {subjectSwapped && (
+                                  <span className="text-[10px] text-muted-foreground line-through">
+                                    {originalSubject?.name}
+                                  </span>
+                                )}
+                                {record.hasOverride && (
                                   <span className="inline-flex items-center space-x-1 text-[9px] font-bold uppercase tracking-wider bg-amber-500/15 border border-amber-500/25 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full">
                                     <Pencil className="h-2.5 w-2.5" />
                                     <span>Modified</span>
                                   </span>
                                 )}
                               </div>
+
                               <div className="flex items-center flex-wrap gap-x-2 text-xs text-muted-foreground">
                                 <span>{formatDateLabel(record.date)}</span>
                                 <span>•</span>
-                                <span>{formatTime(record.timetable?.startTime)} — {formatTime(record.timetable?.endTime)}</span>
+                                <span>
+                                  {formatTime(record.timetable?.startTime)} —{' '}
+                                  {formatTime(record.timetable?.endTime)}
+                                </span>
                                 {displayTeacher && (
                                   <>
                                     <span>•</span>
-                                    <span className={`flex items-center space-x-1 ${(record as HistoryRecord).hasOverride && (record as HistoryRecord).overrideTeacher ? 'text-amber-600 dark:text-amber-400 font-semibold' : ''}`}>
+                                    <span
+                                      className={`flex items-center space-x-1 ${
+                                        record.hasOverride && record.overrideTeacher
+                                          ? 'text-amber-600 dark:text-amber-400 font-semibold'
+                                          : ''
+                                      }`}
+                                    >
                                       <GraduationCap className="h-3 w-3" />
                                       <span>{displayTeacher}</span>
                                     </span>
                                   </>
                                 )}
                               </div>
-                              {(record as HistoryRecord).overrideNotes && (
+
+                              {record.overrideNotes && (
                                 <p className="text-[11px] italic text-amber-600/80 dark:text-amber-400/80 flex items-center space-x-1 mt-0.5">
                                   <StickyNote className="h-3 w-3 shrink-0" />
-                                  <span>{(record as HistoryRecord).overrideNotes}</span>
+                                  <span>{record.overrideNotes}</span>
                                 </p>
                               )}
                             </div>
-                            <div className={`flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full ml-3 shrink-0 ${
-                              record.status === 'present'
-                                ? 'bg-success/10 border border-success/20 text-success'
-                                : 'bg-destructive/10 border border-destructive/20 text-destructive'
-                            }`}>
+
+                            <div
+                              className={`flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full ml-3 shrink-0 ${
+                                record.status === 'present'
+                                  ? 'bg-success/10 border border-success/20 text-success'
+                                  : 'bg-destructive/10 border border-destructive/20 text-destructive'
+                              }`}
+                            >
                               {record.status === 'present' ? (
                                 <CheckCircle2 className="h-3 w-3" />
                               ) : (
