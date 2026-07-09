@@ -403,7 +403,7 @@ export default function SettingsPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="flex flex-col space-y-1.5">
                 <label className="text-sm font-medium text-foreground/80">Academic Year</label>
                 <Input
@@ -433,7 +433,7 @@ export default function SettingsPage() {
                 <span>Academic Scope Selection</span>
               </h4>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Select
                   label="University"
                   value={selectedUniv}
@@ -524,13 +524,13 @@ export default function SettingsPage() {
               </div>
             </div>
           </CardContent>
-          <CardFooter className="flex justify-between border-t border-border/30 pt-4">
+          <CardFooter className="flex flex-col sm:flex-row sm:justify-between items-start sm:items-center gap-3 border-t border-border/30 pt-4">
             <span className="text-xs text-muted-foreground">Changes propagate instantly to overview metrics.</span>
-            <Button type="submit" disabled={updatingProfile} className="min-w-[110px]">
+            <Button type="submit" disabled={updatingProfile} className="min-w-[110px] w-full sm:w-auto">
               {updatingProfile ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : profileSuccess ? (
-                <div className="flex items-center space-x-1">
+                <div className="flex items-center justify-center space-x-1">
                   <Check className="h-4 w-4" />
                   <span>Saved</span>
                 </div>

@@ -4,80 +4,94 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ── Light Mode Tokens ────────────────────────────────────────────── */
 :root {
-  --background: 0 0% 100%;
-  --foreground: 240 10% 3.9%;
-  
-  --card: 0 0% 100%;
-  --card-foreground: 240 10% 3.9%;
-  
-  --popover: 0 0% 100%;
-  --popover-foreground: 240 10% 3.9%;
-  
-  --primary: 221.2 83.2% 53.3%;
-  --primary-foreground: 0 0% 98%;
-  
-  --secondary: 240 4.8% 95.9%;
-  --secondary-foreground: 240 5.9% 10%;
-  
-  --muted: 240 4.8% 95.9%;
-  --muted-foreground: 240 3.8% 46.1%;
-  
-  --accent: 240 4.8% 95.9%;
-  --accent-foreground: 240 5.9% 10%;
-  
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 98%;
+  --background: 250 100% 99%;
+  --foreground: 240 15% 9%;
 
-  --success: 142.1 76.2% 36.3%;
-  --success-foreground: 355.7 100% 97.3%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 15% 9%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 15% 9%;
+
+  /* Indigo/Violet primary */
+  --primary: 243 75% 59%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 246 50% 96%;
+  --secondary-foreground: 243 75% 40%;
+
+  --muted: 240 8% 95%;
+  --muted-foreground: 240 5% 52%;
+
+  --accent: 246 50% 95%;
+  --accent-foreground: 243 75% 50%;
+
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+
+  --success: 145 63% 40%;
+  --success-foreground: 0 0% 100%;
 
   --warning: 38 92% 50%;
-  --warning-foreground: 48 96% 8.9%;
-  
-  --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
-  --ring: 221.2 83.2% 53.3%;
-  
-  --radius: 18px;
+  --warning-foreground: 38 92% 10%;
+
+  --border: 240 8% 90%;
+  --input: 240 8% 90%;
+  --ring: 243 75% 59%;
+
+  --radius: 12px;
+
+  /* Sidebar */
+  --sidebar-width: 240px;
+  --sidebar-bg: 250 100% 99%;
+  --sidebar-border: 240 8% 90%;
 }
 
+/* ── Dark Mode Tokens ─────────────────────────────────────────────── */
 .dark {
-  --background: 240 10% 2%;
-  --foreground: 0 0% 98%;
-  
-  --card: 240 10% 3.9%;
-  --card-foreground: 0 0% 98%;
-  
-  --popover: 240 10% 3.9%;
-  --popover-foreground: 0 0% 98%;
-  
-  --primary: 217.2 91.2% 59.8%;
-  --primary-foreground: 222.2 47.4% 11.2%;
-  
-  --secondary: 240 3.7% 15.9%;
-  --secondary-foreground: 0 0% 98%;
-  
-  --muted: 240 3.7% 15.9%;
-  --muted-foreground: 240 5% 64.9%;
-  
-  --accent: 240 3.7% 15.9%;
-  --accent-foreground: 0 0% 98%;
-  
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 0 0% 98%;
+  /* Warm navy-black — used by Linear, Vercel, Raycast */
+  --background: 226 25% 8%;
+  --foreground: 220 20% 96%;
 
-  --success: 142.1 70.6% 45.3%;
-  --success-foreground: 144.4 61.9% 9.2%;
+  --card: 226 20% 11%;
+  --card-foreground: 220 20% 96%;
 
-  --warning: 47.9 95.8% 53.1%;
-  --warning-foreground: 26 83.3% 14.1%;
-  
-  --border: 240 3.7% 15.9%;
-  --input: 240 3.7% 15.9%;
-  --ring: 217.2 91.2% 59.8%;
+  --popover: 226 20% 11%;
+  --popover-foreground: 220 20% 96%;
+
+  /* Indigo/violet — slightly lighter in dark for contrast */
+  --primary: 243 80% 68%;
+  --primary-foreground: 226 25% 8%;
+
+  --secondary: 226 20% 16%;
+  --secondary-foreground: 220 20% 90%;
+
+  --muted: 226 20% 15%;
+  --muted-foreground: 220 10% 56%;
+
+  --accent: 226 20% 16%;
+  --accent-foreground: 243 80% 75%;
+
+  --destructive: 0 63% 48%;
+  --destructive-foreground: 0 0% 100%;
+
+  --success: 145 63% 48%;
+  --success-foreground: 0 0% 100%;
+
+  --warning: 38 92% 55%;
+  --warning-foreground: 38 92% 10%;
+
+  --border: 226 20% 18%;
+  --input: 226 20% 18%;
+  --ring: 243 80% 68%;
+
+  --sidebar-bg: 226 25% 6%;
+  --sidebar-border: 226 20% 14%;
 }
 
+/* ── Tailwind Theme Registration ──────────────────────────────────── */
 @theme {
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
@@ -112,52 +126,129 @@
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
 
-  --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 2px);
+  --color-sidebar: hsl(var(--sidebar-bg));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+
   --radius-sm: calc(var(--radius) - 4px);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 8px);
+  --radius-2xl: calc(var(--radius) + 16px);
+
+  --font-sans: 'Inter', 'Geist', system-ui, sans-serif;
 }
 
+/* ── Base Styles ──────────────────────────────────────────────────── */
 @layer base {
   * {
     border-color: var(--color-border);
     outline-color: var(--color-ring);
+    box-sizing: border-box;
   }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+    text-rendering: optimizeLegibility;
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings: "rlig" 1, "calt" 1, "kern" 1;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Safe area for notched phones */
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Focus ring — consistent across all interactive elements */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  /* Prevent zoom on input focus on iOS */
+  input[type="text"],
+  input[type="email"],
+  input[type="number"],
+  input[type="time"],
+  input[type="date"],
+  select,
+  textarea {
+    font-size: 16px;
   }
 }
 
-/* Premium Apple/Linear inspired glassmorphic classes */
-.apple-glass {
-  background: rgba(255, 255, 255, 0.4);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+/* ── Glassmorphism ────────────────────────────────────────────────── */
+.glass {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(16px) saturate(1.5);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.dark .glass {
+  background: rgba(15, 17, 28, 0.7);
+  backdrop-filter: blur(16px) saturate(1.5);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Lighter glass for cards that don't need full blur */
+.glass-card {
+  background: rgba(255, 255, 255, 0.5);
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
-.dark .apple-glass {
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+.dark .glass-card {
+  background: rgba(20, 23, 40, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.apple-shadow {
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.03);
+/* ── Sidebar ──────────────────────────────────────────────────────── */
+.sidebar-nav-item {
+  position: relative;
+  transition: all 180ms ease;
 }
 
-.dark .apple-shadow {
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+.sidebar-nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  background: hsl(var(--primary));
+  border-radius: 0 2px 2px 0;
 }
 
-/* Custom scrollbars */
+/* ── Bottom Tab Bar ───────────────────────────────────────────────── */
+.bottom-tab-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: calc(56px + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 50;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(20px) saturate(1.5);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  border-top: 1px solid hsl(var(--border));
+}
+
+.dark .bottom-tab-bar {
+  background: rgba(12, 14, 24, 0.92);
+  border-top: 1px solid hsl(var(--border));
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -165,10 +256,47 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-muted);
+  background: hsl(var(--border));
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-accent);
+  background: hsl(var(--muted-foreground) / 0.4);
+}
+
+/* ── Utility animations ───────────────────────────────────────────── */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted)) 25%,
+    hsl(var(--border)) 50%,
+    hsl(var(--muted)) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.slide-up {
+  animation: slideUp 0.3s ease-out forwards;
+}
+
+/* ── Page content bottom padding for mobile tab bar ──────────────── */
+.page-content-mobile-pb {
+  padding-bottom: calc(56px + env(safe-area-inset-bottom) + 1rem);
+}
+
+@media (min-width: 768px) {
+  .page-content-mobile-pb {
+    padding-bottom: 0;
+  }
 }

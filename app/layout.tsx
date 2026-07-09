@@ -1,11 +1,12 @@
-import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import type { Metadata, Viewport } from 'next';
+import { Inter, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { ThemeProvider } from '@/providers/theme-provider';
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
+const inter = Inter({
+  variable: '--font-inter',
   subsets: ['latin'],
+  display: 'swap',
 });
 
 const geistMono = Geist_Mono({
@@ -13,9 +14,24 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 });
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: 'cover', // supports iPhone notch safe areas
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#fafaff' },
+    { media: '(prefers-color-scheme: dark)',  color: '#0e1120' },
+  ],
+};
+
 export const metadata: Metadata = {
   title: 'LectureFlow — Academic Attendance & Timetable Companion',
-  description: 'Manage your attendance, class timetables, and academic syllabus with a beautiful, Apple-inspired experience built for students.',
+  description:
+    'Track attendance, manage class timetables, and navigate your semester syllabus with a beautiful, intuitive academic companion built for students.',
+  keywords: ['attendance tracker', 'timetable', 'academic', 'student', 'SVIT', 'college'],
+  authors: [{ name: 'LectureFlow' }],
+  robots: 'noindex', // private student app
 };
 
 export default function RootLayout({
@@ -27,7 +43,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable}`}
+      className={`${inter.variable} ${geistMono.variable}`}
     >
       <body className="min-h-screen bg-background text-foreground antialiased font-sans">
         <ThemeProvider
