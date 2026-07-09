@@ -1,7 +1,7 @@
 'use server';
 
 import { db } from '@/database/db';
-import { users, subjects, timetable, attendance } from '@/database/schema';
+import { users, subjects, timetable, attendance, lectureOverrides } from '@/database/schema';
 import { createClient } from '@/lib/supabase/server';
 import { eq, and, or, asc, desc, sql, isNull, count } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
@@ -20,6 +20,7 @@ async function getAuthUser() {
 }
 
 // Get today's or a previous date's timetable entries with their attendance status
+// and any per-day lecture overrides (teacher / room / notes)
 export async function getTodayAttendance(dateStr?: string) {
   try {
     const user = await getAuthUser();
@@ -54,33 +55,51 @@ export async function getTodayAttendance(dateStr?: string) {
       );
     }
 
-    const todayEntries = await db.query.timetable.findMany({
-      where: and(
-        eq(timetable.dayOfWeek, dayOfWeek),
-        or(...userConditions)
-      ),
-      with: { subject: true },
-      orderBy: [asc(timetable.startTime)],
-    });
+    const [todayEntries, todayRecords, dayOverrides] = await Promise.all([
+      // Timetable entries for this weekday
+      db.query.timetable.findMany({
+        where: and(
+          eq(timetable.dayOfWeek, dayOfWeek),
+          or(...userConditions)
+        ),
+        with: { subject: true },
+        orderBy: [asc(timetable.startTime)],
+      }),
+      // Attendance records for the target date
+      db
+        .select()
+        .from(attendance)
+        .where(
+          and(
+            eq(attendance.userId, user.id),
+            eq(attendance.date, targetDateStr)
+          )
+        ),
+      // Lecture overrides for the target date
+      db
+        .select()
+        .from(lectureOverrides)
+        .where(
+          and(
+            eq(lectureOverrides.userId, user.id),
+            eq(lectureOverrides.date, targetDateStr)
+          )
+        ),
+    ]);
 
-    // Fetch attendance records for the target date
-    const todayRecords = await db
-      .select()
-      .from(attendance)
-      .where(
-        and(
-          eq(attendance.userId, user.id),
-          eq(attendance.date, targetDateStr)
-        )
-      );
-
-    // Merge timetable with attendance status
+    // Merge timetable with attendance status + overrides
     const entriesWithStatus = todayEntries.map((entry) => {
       const record = todayRecords.find((r) => r.timetableId === entry.id);
+      const override = dayOverrides.find((o) => o.timetableId === entry.id);
       return {
         ...entry,
         attendanceId: record?.id || null,
         attendanceStatus: record?.status || null, // 'present', 'absent', null
+        // Override fields (null means use default from timetable)
+        overrideTeacher: override?.teacher ?? null,
+        overrideRoom: override?.room ?? null,
+        overrideNotes: override?.notes ?? null,
+        hasOverride: !!override,
       };
     });
 
@@ -162,6 +181,85 @@ export async function unmarkAttendance(timetableId: string, date: string) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to unmark attendance.';
     console.error('Error in unmarkAttendance:', error);
+    return { success: false, error: message };
+  }
+}
+
+// Save (upsert) a per-day lecture override
+export async function saveLectureOverride(
+  timetableId: string,
+  date: string,
+  data: { teacher?: string; room?: string; notes?: string }
+) {
+  try {
+    const user = await getAuthUser();
+    if (!user) throw new Error('Unauthorized');
+
+    const existing = await db.query.lectureOverrides.findFirst({
+      where: and(
+        eq(lectureOverrides.userId, user.id),
+        eq(lectureOverrides.timetableId, timetableId),
+        eq(lectureOverrides.date, date)
+      ),
+    });
+
+    const now = new Date();
+
+    if (existing) {
+      await db
+        .update(lectureOverrides)
+        .set({
+          teacher: data.teacher ?? null,
+          room: data.room ?? null,
+          notes: data.notes ?? null,
+          updatedAt: now,
+        })
+        .where(eq(lectureOverrides.id, existing.id));
+    } else {
+      await db.insert(lectureOverrides).values({
+        userId: user.id,
+        timetableId,
+        date,
+        teacher: data.teacher ?? null,
+        room: data.room ?? null,
+        notes: data.notes ?? null,
+      });
+    }
+
+    revalidatePath('/dashboard/attendance');
+
+    return { success: true };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to save lecture override.';
+    console.error('Error in saveLectureOverride:', error);
+    return { success: false, error: message };
+  }
+}
+
+// Delete a per-day lecture override (resets lecture to its timetable defaults)
+export async function deleteLectureOverride(timetableId: string, date: string) {
+  try {
+    const user = await getAuthUser();
+    if (!user) throw new Error('Unauthorized');
+
+    const existing = await db.query.lectureOverrides.findFirst({
+      where: and(
+        eq(lectureOverrides.userId, user.id),
+        eq(lectureOverrides.timetableId, timetableId),
+        eq(lectureOverrides.date, date)
+      ),
+    });
+
+    if (existing) {
+      await db.delete(lectureOverrides).where(eq(lectureOverrides.id, existing.id));
+    }
+
+    revalidatePath('/dashboard/attendance');
+
+    return { success: true };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to reset lecture override.';
+    console.error('Error in deleteLectureOverride:', error);
     return { success: false, error: message };
   }
 }
@@ -275,7 +373,30 @@ export async function getAttendanceHistory(subjectId?: string) {
       ? records.filter((r) => r.timetable?.subject?.id === subjectId)
       : records;
 
-    return { success: true, records: filtered };
+    // Fetch overrides for the dates present in history so we can show
+    // the actual teacher/room that was in effect on each day
+    const historyDates = [...new Set(filtered.map((r) => r.date))];
+    const allOverrides = historyDates.length > 0
+      ? await db
+          .select()
+          .from(lectureOverrides)
+          .where(eq(lectureOverrides.userId, user.id))
+      : [];
+
+    const recordsWithOverrides = filtered.map((r) => {
+      const override = allOverrides.find(
+        (o) => o.timetableId === r.timetableId && o.date === r.date
+      );
+      return {
+        ...r,
+        overrideTeacher: override?.teacher ?? null,
+        overrideRoom: override?.room ?? null,
+        overrideNotes: override?.notes ?? null,
+        hasOverride: !!override,
+      };
+    });
+
+    return { success: true, records: recordsWithOverrides };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch history.';
     console.error('Error in getAttendanceHistory:', error);

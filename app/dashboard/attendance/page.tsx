@@ -20,6 +20,11 @@ import {
   BarChart3,
   History,
   Target,
+  Pencil,
+  RotateCcw,
+  Save,
+  StickyNote,
+  X,
 } from 'lucide-react';
 import {
   getTodayAttendance,
@@ -27,6 +32,8 @@ import {
   unmarkAttendance,
   getAttendanceStats,
   getAttendanceHistory,
+  saveLectureOverride,
+  deleteLectureOverride,
 } from './actions';
 
 interface TodayEntry {
@@ -44,6 +51,11 @@ interface TodayEntry {
   };
   attendanceId: string | null;
   attendanceStatus: string | null;
+  // Override fields
+  overrideTeacher: string | null;
+  overrideRoom: string | null;
+  overrideNotes: string | null;
+  hasOverride: boolean;
 }
 
 interface SubjectStat {
@@ -60,9 +72,15 @@ interface HistoryRecord {
   id: string;
   date: string;
   status: string;
+  hasOverride: boolean;
+  overrideTeacher: string | null;
+  overrideRoom: string | null;
+  overrideNotes: string | null;
   timetable: {
     startTime: string;
     endTime: string;
+    teacher: string | null;
+    room: string | null;
     subject: {
       id: string;
       name: string;
@@ -93,6 +111,140 @@ function formatDateLabel(dateStr: string): string {
 
 type TabId = 'today' | 'stats' | 'history';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Inline Edit Panel for a single lecture card
+// ─────────────────────────────────────────────────────────────────────────────
+interface EditPanelProps {
+  entry: TodayEntry;
+  date: string;
+  onSave: (entryId: string, data: { teacher: string; room: string; notes: string }) => Promise<void>;
+  onReset: (entryId: string) => Promise<void>;
+  onClose: () => void;
+}
+
+function LectureEditPanel({ entry, date, onSave, onReset, onClose }: EditPanelProps) {
+  const [teacher, setTeacher] = React.useState(entry.overrideTeacher ?? entry.teacher ?? '');
+  const [room, setRoom] = React.useState(entry.overrideRoom ?? entry.room ?? '');
+  const [notes, setNotes] = React.useState(entry.overrideNotes ?? '');
+  const [saving, setSaving] = React.useState(false);
+  const [resetting, setResetting] = React.useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave(entry.id, { teacher, room, notes });
+    setSaving(false);
+    onClose();
+  };
+
+  const handleReset = async () => {
+    setResetting(true);
+    await onReset(entry.id);
+    setResetting(false);
+    onClose();
+  };
+
+  return (
+    <motion.div
+      key="edit-panel"
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: 'auto' }}
+      exit={{ opacity: 0, height: 0 }}
+      transition={{ duration: 0.22, ease: 'easeInOut' }}
+      className="overflow-hidden"
+    >
+      <div className="mt-3 pt-3 border-t border-border/40 space-y-3">
+        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+          Edit for {formatDateLabel(date)} only
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Teacher field */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-muted-foreground flex items-center space-x-1">
+              <GraduationCap className="h-3 w-3" />
+              <span>Faculty / Teacher</span>
+            </label>
+            <input
+              type="text"
+              value={teacher}
+              onChange={(e) => setTeacher(e.target.value)}
+              placeholder={entry.teacher ?? 'Enter faculty name'}
+              className="flex h-9 w-full rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-all"
+            />
+          </div>
+
+          {/* Room field */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-muted-foreground flex items-center space-x-1">
+              <MapPin className="h-3 w-3" />
+              <span>Room / Location</span>
+            </label>
+            <input
+              type="text"
+              value={room}
+              onChange={(e) => setRoom(e.target.value)}
+              placeholder={entry.room ?? 'Enter room'}
+              className="flex h-9 w-full rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-all"
+            />
+          </div>
+        </div>
+
+        {/* Notes field */}
+        <div className="space-y-1">
+          <label className="text-xs font-semibold text-muted-foreground flex items-center space-x-1">
+            <StickyNote className="h-3 w-3" />
+            <span>Notes <span className="font-normal">(optional)</span></span>
+          </label>
+          <input
+            type="text"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="e.g. Substitute lecture by Dr. Mehta"
+            className="flex h-9 w-full rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-all"
+          />
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex items-center justify-between pt-1">
+          {entry.hasOverride ? (
+            <button
+              onClick={handleReset}
+              disabled={resetting || saving}
+              className="flex items-center space-x-1.5 text-xs font-semibold text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              <RotateCcw className={`h-3.5 w-3.5 ${resetting ? 'animate-spin' : ''}`} />
+              <span>{resetting ? 'Resetting…' : 'Reset to Default'}</span>
+            </button>
+          ) : (
+            <span />
+          )}
+
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={onClose}
+              className="flex items-center space-x-1 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors cursor-pointer px-2.5 py-1.5 rounded-lg hover:bg-muted/50"
+            >
+              <X className="h-3.5 w-3.5" />
+              <span>Cancel</span>
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving || resetting}
+              className="flex items-center space-x-1.5 text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 transition-all cursor-pointer px-3 py-1.5 rounded-lg disabled:opacity-50 shadow-sm"
+            >
+              <Save className={`h-3.5 w-3.5 ${saving ? 'animate-pulse' : ''}`} />
+              <span>{saving ? 'Saving…' : 'Save Override'}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Attendance Page
+// ─────────────────────────────────────────────────────────────────────────────
 export default function AttendancePage() {
   const [activeTab, setActiveTab] = React.useState<TabId>('today');
   const [loading, setLoading] = React.useState(true);
@@ -102,6 +254,8 @@ export default function AttendancePage() {
   const [todayEntries, setTodayEntries] = React.useState<TodayEntry[]>([]);
   const [todayDate, setTodayDate] = React.useState('');
   const [markingId, setMarkingId] = React.useState<string | null>(null);
+  // Which card has edit panel open
+  const [editingId, setEditingId] = React.useState<string | null>(null);
 
   // Stats tab state
   const [subjectStats, setSubjectStats] = React.useState<SubjectStat[]>([]);
@@ -196,6 +350,7 @@ export default function AttendancePage() {
   const handleDateChange = async (dateStr: string) => {
     if (!dateStr) return;
     setTodayDate(dateStr);
+    setEditingId(null);
     setLoading(true);
     try {
       const res = await getTodayAttendance(dateStr);
@@ -208,6 +363,50 @@ export default function AttendancePage() {
       setError('An error occurred while switching dates.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Save an override for a specific entry
+  const handleSaveOverride = async (
+    entryId: string,
+    data: { teacher: string; room: string; notes: string }
+  ) => {
+    const res = await saveLectureOverride(entryId, todayDate, data);
+    if (res.success) {
+      // Update local state immediately
+      setTodayEntries((prev) =>
+        prev.map((e) =>
+          e.id === entryId
+            ? {
+                ...e,
+                overrideTeacher: data.teacher || null,
+                overrideRoom: data.room || null,
+                overrideNotes: data.notes || null,
+                hasOverride: true,
+              }
+            : e
+        )
+      );
+    }
+  };
+
+  // Delete / reset an override for a specific entry
+  const handleResetOverride = async (entryId: string) => {
+    const res = await deleteLectureOverride(entryId, todayDate);
+    if (res.success) {
+      setTodayEntries((prev) =>
+        prev.map((e) =>
+          e.id === entryId
+            ? {
+                ...e,
+                overrideTeacher: null,
+                overrideRoom: null,
+                overrideNotes: null,
+                hasOverride: false,
+              }
+            : e
+        )
+      );
     }
   };
 
@@ -331,6 +530,11 @@ export default function AttendancePage() {
                     const isPresent = entry.attendanceStatus === 'present';
                     const isAbsent = entry.attendanceStatus === 'absent';
                     const isMarking = markingId === entry.id;
+                    const isEditing = editingId === entry.id;
+
+                    // Use override values if set, else default timetable values
+                    const displayTeacher = entry.overrideTeacher ?? entry.teacher;
+                    const displayRoom = entry.overrideRoom ?? entry.room;
 
                     return (
                       <motion.div
@@ -347,14 +551,21 @@ export default function AttendancePage() {
                             : 'border-border/60 bg-card/40 backdrop-blur-md'
                         }`}>
                           <CardContent className="p-4 md:p-5">
-                            <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-start justify-between gap-4">
                               {/* Left: Class info */}
-                              <div className="flex-1 space-y-1.5">
+                              <div className="flex-1 space-y-1.5 min-w-0">
                                 <div className="flex items-center space-x-2">
-                                  <Clock className="h-3.5 w-3.5 text-primary" />
+                                  <Clock className="h-3.5 w-3.5 text-primary shrink-0" />
                                   <span className="text-xs font-bold text-primary">
                                     {formatTime(entry.startTime)} — {formatTime(entry.endTime)}
                                   </span>
+                                  {/* Modified badge */}
+                                  {entry.hasOverride && (
+                                    <span className="inline-flex items-center space-x-1 text-[9px] font-bold uppercase tracking-wider bg-amber-500/15 border border-amber-500/25 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full">
+                                      <Pencil className="h-2.5 w-2.5" />
+                                      <span>Modified</span>
+                                    </span>
+                                  )}
                                 </div>
 
                                 <h4 className="text-base font-bold tracking-tight">{entry.subject.name}</h4>
@@ -365,23 +576,48 @@ export default function AttendancePage() {
                                       {entry.subject.code}
                                     </span>
                                   )}
-                                  {entry.room && (
+                                  {displayRoom && (
                                     <span className="flex items-center space-x-1">
                                       <MapPin className="h-3 w-3" />
-                                      <span>{entry.room}</span>
+                                      <span className={entry.hasOverride && entry.overrideRoom ? 'text-amber-600 dark:text-amber-400 font-semibold' : ''}>
+                                        {displayRoom}
+                                      </span>
                                     </span>
                                   )}
-                                  {entry.teacher && (
+                                  {displayTeacher && (
                                     <span className="flex items-center space-x-1">
                                       <GraduationCap className="h-3 w-3" />
-                                      <span>{entry.teacher}</span>
+                                      <span className={entry.hasOverride && entry.overrideTeacher ? 'text-amber-600 dark:text-amber-400 font-semibold' : ''}>
+                                        {displayTeacher}
+                                      </span>
+                                    </span>
+                                  )}
+                                  {entry.overrideNotes && (
+                                    <span className="flex items-center space-x-1 italic text-amber-600/80 dark:text-amber-400/80">
+                                      <StickyNote className="h-3 w-3" />
+                                      <span>{entry.overrideNotes}</span>
                                     </span>
                                   )}
                                 </div>
                               </div>
 
-                              {/* Right: Mark buttons */}
-                              <div className="flex items-center space-x-2 shrink-0">
+                              {/* Right: Edit + Mark buttons */}
+                              <div className="flex items-center space-x-1.5 shrink-0">
+                                {/* Edit override button */}
+                                <button
+                                  onClick={() => setEditingId(isEditing ? null : entry.id)}
+                                  title="Edit this lecture for today"
+                                  className={`flex items-center justify-center h-8 w-8 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                    isEditing
+                                      ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                                      : entry.hasOverride
+                                      ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border border-amber-500/20'
+                                      : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground border border-border/40'
+                                  }`}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+
                                 <button
                                   onClick={() => handleMark(entry.id, 'present')}
                                   disabled={isMarking}
@@ -408,6 +644,19 @@ export default function AttendancePage() {
                                 </button>
                               </div>
                             </div>
+
+                            {/* Inline Edit Panel */}
+                            <AnimatePresence>
+                              {isEditing && (
+                                <LectureEditPanel
+                                  entry={entry}
+                                  date={todayDate}
+                                  onSave={handleSaveOverride}
+                                  onReset={handleResetOverride}
+                                  onClose={() => setEditingId(null)}
+                                />
+                              )}
+                            </AnimatePresence>
                           </CardContent>
                         </Card>
                       </motion.div>
@@ -578,37 +827,64 @@ export default function AttendancePage() {
                 <Card className="border-border/60 bg-card/40 backdrop-blur-md">
                   <CardContent className="p-0">
                     <div className="divide-y divide-border/30">
-                      {filteredHistory.map((record) => (
-                        <div key={record.id} className="flex items-center justify-between px-5 py-3.5">
-                          <div className="space-y-0.5">
-                            <div className="flex items-center space-x-2">
-                              <span className="text-sm font-semibold">{record.timetable?.subject?.name}</span>
-                              {record.timetable?.subject?.code && (
-                                <span className="text-[9px] font-bold text-muted-foreground uppercase bg-muted px-1.5 py-0.5 rounded">
-                                  {record.timetable.subject.code}
-                                </span>
+                      {filteredHistory.map((record) => {
+                        const displayTeacher =
+                          (record as HistoryRecord).overrideTeacher ?? record.timetable?.teacher ?? null;
+                        const displayRoom =
+                          (record as HistoryRecord).overrideRoom ?? record.timetable?.room ?? null;
+                        return (
+                          <div key={record.id} className="flex items-center justify-between px-5 py-3.5">
+                            <div className="space-y-0.5 min-w-0 flex-1">
+                              <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                                <span className="text-sm font-semibold">{record.timetable?.subject?.name}</span>
+                                {record.timetable?.subject?.code && (
+                                  <span className="text-[9px] font-bold text-muted-foreground uppercase bg-muted px-1.5 py-0.5 rounded">
+                                    {record.timetable.subject.code}
+                                  </span>
+                                )}
+                                {(record as HistoryRecord).hasOverride && (
+                                  <span className="inline-flex items-center space-x-1 text-[9px] font-bold uppercase tracking-wider bg-amber-500/15 border border-amber-500/25 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full">
+                                    <Pencil className="h-2.5 w-2.5" />
+                                    <span>Modified</span>
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center flex-wrap gap-x-2 text-xs text-muted-foreground">
+                                <span>{formatDateLabel(record.date)}</span>
+                                <span>•</span>
+                                <span>{formatTime(record.timetable?.startTime)} — {formatTime(record.timetable?.endTime)}</span>
+                                {displayTeacher && (
+                                  <>
+                                    <span>•</span>
+                                    <span className={`flex items-center space-x-1 ${(record as HistoryRecord).hasOverride && (record as HistoryRecord).overrideTeacher ? 'text-amber-600 dark:text-amber-400 font-semibold' : ''}`}>
+                                      <GraduationCap className="h-3 w-3" />
+                                      <span>{displayTeacher}</span>
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                              {(record as HistoryRecord).overrideNotes && (
+                                <p className="text-[11px] italic text-amber-600/80 dark:text-amber-400/80 flex items-center space-x-1 mt-0.5">
+                                  <StickyNote className="h-3 w-3 shrink-0" />
+                                  <span>{(record as HistoryRecord).overrideNotes}</span>
+                                </p>
                               )}
                             </div>
-                            <div className="flex items-center space-x-2 text-xs text-muted-foreground">
-                              <span>{formatDateLabel(record.date)}</span>
-                              <span>•</span>
-                              <span>{formatTime(record.timetable?.startTime)} — {formatTime(record.timetable?.endTime)}</span>
+                            <div className={`flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full ml-3 shrink-0 ${
+                              record.status === 'present'
+                                ? 'bg-success/10 border border-success/20 text-success'
+                                : 'bg-destructive/10 border border-destructive/20 text-destructive'
+                            }`}>
+                              {record.status === 'present' ? (
+                                <CheckCircle2 className="h-3 w-3" />
+                              ) : (
+                                <XCircle className="h-3 w-3" />
+                              )}
+                              <span>{record.status}</span>
                             </div>
                           </div>
-                          <div className={`flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full ${
-                            record.status === 'present'
-                              ? 'bg-success/10 border border-success/20 text-success'
-                              : 'bg-destructive/10 border border-destructive/20 text-destructive'
-                          }`}>
-                            {record.status === 'present' ? (
-                              <CheckCircle2 className="h-3 w-3" />
-                            ) : (
-                              <XCircle className="h-3 w-3" />
-                            )}
-                            <span>{record.status}</span>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </CardContent>
                 </Card>

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, boolean, timestamp, date, uniqueIndex, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, boolean, timestamp, date, uniqueIndex, index, unique } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // 1. Universities Table
@@ -176,6 +176,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   }),
   attendance: many(attendance),
   timetable: many(timetable),
+  lectureOverrides: many(lectureOverrides),
   settings: one(settings, {
     fields: [users.id],
     references: [settings.userId],
@@ -248,6 +249,7 @@ export const timetableRelations = relations(timetable, ({ one, many }) => ({
     references: [subjects.id],
   }),
   attendance: many(attendance),
+  lectureOverrides: many(lectureOverrides),
 }));
 
 // 10. Attendance Table
@@ -275,6 +277,39 @@ export const attendanceRelations = relations(attendance, ({ one }) => ({
   }),
   timetable: one(timetable, {
     fields: [attendance.timetableId],
+    references: [timetable.id],
+  }),
+}));
+
+// 10b. Lecture Overrides Table (per-day timetable overrides)
+export const lectureOverrides = pgTable('lecture_overrides', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  timetableId: uuid('timetable_id')
+    .references(() => timetable.id, { onDelete: 'cascade' })
+    .notNull(),
+  date: date('date').notNull(), // YYYY-MM-DD
+  teacher: text('teacher'),     // overrides timetable.teacher for this date
+  room: text('room'),           // overrides timetable.room for this date
+  notes: text('notes'),         // optional note, e.g. "Substitute by Dr. Mehta"
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique('lecture_overrides_unique').on(table.userId, table.timetableId, table.date),
+  index('lecture_overrides_user_idx').on(table.userId),
+  index('lecture_overrides_timetable_idx').on(table.timetableId),
+  index('lecture_overrides_date_idx').on(table.date),
+]);
+
+export const lectureOverridesRelations = relations(lectureOverrides, ({ one }) => ({
+  user: one(users, {
+    fields: [lectureOverrides.userId],
+    references: [users.id],
+  }),
+  timetable: one(timetable, {
+    fields: [lectureOverrides.timetableId],
     references: [timetable.id],
   }),
 }));
