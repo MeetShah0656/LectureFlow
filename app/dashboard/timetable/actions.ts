@@ -48,21 +48,68 @@ export async function getUserTimetable() {
       );
     }
 
-    const allEntries = await db.query.timetable.findMany({
-      where: and(
-        or(...userConditions),
-        eq(timetable.isActive, true)
-      ),
-      with: {
-        subject: true,
-      },
-      orderBy: [asc(timetable.dayOfWeek), asc(timetable.startTime)],
-    });
+    const rawEntries = await db
+      .select({
+        id: timetable.id,
+        userId: timetable.userId,
+        classId: timetable.classId,
+        batchId: timetable.batchId,
+        subjectId: timetable.subjectId,
+        dayOfWeek: timetable.dayOfWeek,
+        startTime: timetable.startTime,
+        endTime: timetable.endTime,
+        room: timetable.room,
+        teacher: timetable.teacher,
+        effectiveFrom: timetable.effectiveFrom,
+        effectiveUntil: timetable.effectiveUntil,
+        isActive: timetable.isActive,
+        createdAt: timetable.createdAt,
+        subId: subjects.id,
+        subSemesterId: subjects.semesterId,
+        subName: subjects.name,
+        subCode: subjects.code,
+        subCreatedAt: subjects.createdAt,
+      })
+      .from(timetable)
+      .leftJoin(subjects, eq(timetable.subjectId, subjects.id))
+      .where(
+        and(
+          or(...userConditions),
+          eq(timetable.isActive, true)
+        )
+      )
+      .orderBy(asc(timetable.dayOfWeek), asc(timetable.startTime));
 
-    const entries = allEntries.filter((entry) => {
-      if (!entry.effectiveUntil) return true;
-      return entry.effectiveUntil.toString() >= todayStr;
-    });
+    const entries = rawEntries
+      .filter((entry) => {
+        if (!entry.effectiveUntil) return true;
+        return entry.effectiveUntil.toString() >= todayStr;
+      })
+      .map((e) => ({
+        id: e.id,
+        userId: e.userId,
+        classId: e.classId,
+        batchId: e.batchId,
+        subjectId: e.subjectId,
+        dayOfWeek: e.dayOfWeek,
+        startTime: e.startTime,
+        endTime: e.endTime,
+        room: e.room,
+        teacher: e.teacher,
+        effectiveFrom: e.effectiveFrom,
+        effectiveUntil: e.effectiveUntil,
+        isActive: e.isActive,
+        createdAt: e.createdAt,
+        subject: e.subId
+          ? {
+              id: e.subId,
+              semesterId: e.subSemesterId!,
+              name: e.subName!,
+              code: e.subCode,
+              createdAt: e.subCreatedAt!,
+            }
+          : null,
+      }));
 
     return { success: true, entries };
   } catch (error: unknown) {

@@ -66,7 +66,11 @@ export async function getTodayAttendance(dateStr?: string) {
           effectiveUntil: timetable.effectiveUntil,
           isActive: timetable.isActive,
           createdAt: timetable.createdAt,
-          subject: subjects,
+          subId: subjects.id,
+          subSemesterId: subjects.semesterId,
+          subName: subjects.name,
+          subCode: subjects.code,
+          subCreatedAt: subjects.createdAt,
         })
         .from(timetable)
         .leftJoin(subjects, eq(timetable.subjectId, subjects.id))
@@ -92,9 +96,30 @@ export async function getTodayAttendance(dateStr?: string) {
         const until = entry.effectiveUntil ? entry.effectiveUntil.toString() : '9999-12-31';
         return from <= targetDateStr! && until >= targetDateStr!;
       })
-      .map((entry) => ({
-        ...entry,
-        subject: entry.subject!,
+      .map((e) => ({
+        id: e.id,
+        userId: e.userId,
+        classId: e.classId,
+        batchId: e.batchId,
+        subjectId: e.subjectId,
+        dayOfWeek: e.dayOfWeek,
+        startTime: e.startTime,
+        endTime: e.endTime,
+        room: e.room,
+        teacher: e.teacher,
+        effectiveFrom: e.effectiveFrom,
+        effectiveUntil: e.effectiveUntil,
+        isActive: e.isActive,
+        createdAt: e.createdAt,
+        subject: e.subId
+          ? {
+              id: e.subId,
+              semesterId: e.subSemesterId!,
+              name: e.subName!,
+              code: e.subCode,
+              createdAt: e.subCreatedAt!,
+            }
+          : null,
       }));
 
     // Include any archived entries that have attendance marked on this specific date
@@ -121,13 +146,41 @@ export async function getTodayAttendance(dateStr?: string) {
           effectiveUntil: timetable.effectiveUntil,
           isActive: timetable.isActive,
           createdAt: timetable.createdAt,
-          subject: subjects,
+          subId: subjects.id,
+          subSemesterId: subjects.semesterId,
+          subName: subjects.name,
+          subCode: subjects.code,
+          subCreatedAt: subjects.createdAt,
         })
         .from(timetable)
         .leftJoin(subjects, eq(timetable.subjectId, subjects.id))
         .where(inArray(timetable.id, extraTtIds));
 
-      extraEntries = rawExtra.map((e) => ({ ...e, subject: e.subject! }));
+      extraEntries = rawExtra.map((e) => ({
+        id: e.id,
+        userId: e.userId,
+        classId: e.classId,
+        batchId: e.batchId,
+        subjectId: e.subjectId,
+        dayOfWeek: e.dayOfWeek,
+        startTime: e.startTime,
+        endTime: e.endTime,
+        room: e.room,
+        teacher: e.teacher,
+        effectiveFrom: e.effectiveFrom,
+        effectiveUntil: e.effectiveUntil,
+        isActive: e.isActive,
+        createdAt: e.createdAt,
+        subject: e.subId
+          ? {
+              id: e.subId,
+              semesterId: e.subSemesterId!,
+              name: e.subName!,
+              code: e.subCode,
+              createdAt: e.subCreatedAt!,
+            }
+          : null,
+      }));
     }
 
     const todayEntries = [...dateMatchedEntries, ...extraEntries].sort((a, b) =>
@@ -338,7 +391,11 @@ export async function getAttendanceStats() {
           effectiveUntil: timetable.effectiveUntil,
           isActive: timetable.isActive,
           createdAt: timetable.createdAt,
-          subject: subjects,
+          subId: subjects.id,
+          subSemesterId: subjects.semesterId,
+          subName: subjects.name,
+          subCode: subjects.code,
+          subCreatedAt: subjects.createdAt,
         })
         .from(timetable)
         .leftJoin(subjects, eq(timetable.subjectId, subjects.id))
@@ -346,7 +403,32 @@ export async function getAttendanceStats() {
       db.select().from(lectureOverrides).where(eq(lectureOverrides.userId, user.id)),
     ]);
 
-    const userTimetable = rawUserTimetable.map((t) => ({ ...t, subject: t.subject! }));
+    const userTimetable = rawUserTimetable.map((e) => ({
+      id: e.id,
+      userId: e.userId,
+      classId: e.classId,
+      batchId: e.batchId,
+      subjectId: e.subjectId,
+      dayOfWeek: e.dayOfWeek,
+      startTime: e.startTime,
+      endTime: e.endTime,
+      room: e.room,
+      teacher: e.teacher,
+      effectiveFrom: e.effectiveFrom,
+      effectiveUntil: e.effectiveUntil,
+      isActive: e.isActive,
+      createdAt: e.createdAt,
+      subject: e.subId
+        ? {
+            id: e.subId,
+            semesterId: e.subSemesterId!,
+            name: e.subName!,
+            code: e.subCode,
+            createdAt: e.subCreatedAt!,
+          }
+        : null,
+    }));
+
     const timetableIds = userTimetable.map((t) => t.id);
 
     const allRecords =
