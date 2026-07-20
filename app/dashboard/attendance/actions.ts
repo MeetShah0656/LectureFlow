@@ -3,7 +3,7 @@
 import { db } from '@/database/db';
 import { users, subjects, timetable, attendance, lectureOverrides } from '@/database/schema';
 import { createClient } from '@/lib/supabase/server';
-import { eq, and, or, asc, desc, isNull, inArray, lte, gte } from 'drizzle-orm';
+import { eq, and, or, asc, desc, isNull, inArray } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 // Helper to get auth user profile
@@ -49,15 +49,34 @@ export async function getTodayAttendance(dateStr?: string) {
       );
     }
 
-    const [allDayEntries, todayRecords, dayOverrides] = await Promise.all([
-      db.query.timetable.findMany({
-        where: and(
-          eq(timetable.dayOfWeek, dayOfWeek),
-          or(...userConditions)
-        ),
-        with: { subject: true },
-        orderBy: [asc(timetable.startTime)],
-      }),
+    const [rawAllDayEntries, todayRecords, dayOverrides] = await Promise.all([
+      db
+        .select({
+          id: timetable.id,
+          userId: timetable.userId,
+          classId: timetable.classId,
+          batchId: timetable.batchId,
+          subjectId: timetable.subjectId,
+          dayOfWeek: timetable.dayOfWeek,
+          startTime: timetable.startTime,
+          endTime: timetable.endTime,
+          room: timetable.room,
+          teacher: timetable.teacher,
+          effectiveFrom: timetable.effectiveFrom,
+          effectiveUntil: timetable.effectiveUntil,
+          isActive: timetable.isActive,
+          createdAt: timetable.createdAt,
+          subject: subjects,
+        })
+        .from(timetable)
+        .leftJoin(subjects, eq(timetable.subjectId, subjects.id))
+        .where(
+          and(
+            eq(timetable.dayOfWeek, dayOfWeek),
+            or(...userConditions)
+          )
+        )
+        .orderBy(asc(timetable.startTime)),
       db.select().from(attendance).where(
         and(eq(attendance.userId, user.id), eq(attendance.date, targetDateStr))
       ),
@@ -67,11 +86,16 @@ export async function getTodayAttendance(dateStr?: string) {
     ]);
 
     // Filter entries active on targetDateStr
-    const dateMatchedEntries = allDayEntries.filter((entry) => {
-      const from = entry.effectiveFrom ? entry.effectiveFrom.toString() : '1970-01-01';
-      const until = entry.effectiveUntil ? entry.effectiveUntil.toString() : '9999-12-31';
-      return from <= targetDateStr! && until >= targetDateStr!;
-    });
+    const dateMatchedEntries = rawAllDayEntries
+      .filter((entry) => {
+        const from = entry.effectiveFrom ? entry.effectiveFrom.toString() : '1970-01-01';
+        const until = entry.effectiveUntil ? entry.effectiveUntil.toString() : '9999-12-31';
+        return from <= targetDateStr! && until >= targetDateStr!;
+      })
+      .map((entry) => ({
+        ...entry,
+        subject: entry.subject!,
+      }));
 
     // Include any archived entries that have attendance marked on this specific date
     const existingEntryIds = new Set(dateMatchedEntries.map((e) => e.id));
@@ -81,10 +105,29 @@ export async function getTodayAttendance(dateStr?: string) {
 
     let extraEntries: typeof dateMatchedEntries = [];
     if (extraTtIds.length > 0) {
-      extraEntries = await db.query.timetable.findMany({
-        where: inArray(timetable.id, extraTtIds),
-        with: { subject: true },
-      });
+      const rawExtra = await db
+        .select({
+          id: timetable.id,
+          userId: timetable.userId,
+          classId: timetable.classId,
+          batchId: timetable.batchId,
+          subjectId: timetable.subjectId,
+          dayOfWeek: timetable.dayOfWeek,
+          startTime: timetable.startTime,
+          endTime: timetable.endTime,
+          room: timetable.room,
+          teacher: timetable.teacher,
+          effectiveFrom: timetable.effectiveFrom,
+          effectiveUntil: timetable.effectiveUntil,
+          isActive: timetable.isActive,
+          createdAt: timetable.createdAt,
+          subject: subjects,
+        })
+        .from(timetable)
+        .leftJoin(subjects, eq(timetable.subjectId, subjects.id))
+        .where(inArray(timetable.id, extraTtIds));
+
+      extraEntries = rawExtra.map((e) => ({ ...e, subject: e.subject! }));
     }
 
     const todayEntries = [...dateMatchedEntries, ...extraEntries].sort((a, b) =>
@@ -277,13 +320,33 @@ export async function getAttendanceStats() {
       );
     }
 
-    const [semesterSubjects, userTimetable, allOverrides] = await Promise.all([
+    const [semesterSubjects, rawUserTimetable, allOverrides] = await Promise.all([
       db.select().from(subjects).where(eq(subjects.semesterId, user.semesterId)).orderBy(asc(subjects.name)),
-      db.query.timetable.findMany({ where: or(...userConditions) }),
-      // Fetch overrides that have a subject override — used to remap attendance counts
+      db
+        .select({
+          id: timetable.id,
+          userId: timetable.userId,
+          classId: timetable.classId,
+          batchId: timetable.batchId,
+          subjectId: timetable.subjectId,
+          dayOfWeek: timetable.dayOfWeek,
+          startTime: timetable.startTime,
+          endTime: timetable.endTime,
+          room: timetable.room,
+          teacher: timetable.teacher,
+          effectiveFrom: timetable.effectiveFrom,
+          effectiveUntil: timetable.effectiveUntil,
+          isActive: timetable.isActive,
+          createdAt: timetable.createdAt,
+          subject: subjects,
+        })
+        .from(timetable)
+        .leftJoin(subjects, eq(timetable.subjectId, subjects.id))
+        .where(or(...userConditions)),
       db.select().from(lectureOverrides).where(eq(lectureOverrides.userId, user.id)),
     ]);
 
+    const userTimetable = rawUserTimetable.map((t) => ({ ...t, subject: t.subject! }));
     const timetableIds = userTimetable.map((t) => t.id);
 
     const allRecords =
@@ -291,8 +354,6 @@ export async function getAttendanceStats() {
         ? await db.select().from(attendance).where(eq(attendance.userId, user.id))
         : [];
 
-    // Helper: resolve the effective subjectId for a given attendance record
-    // If there's an override with a different subjectId for that (timetableId, date), use it
     function effectiveSubjectId(record: { timetableId: string; date: string }): string {
       const override = allOverrides.find(
         (o) => o.timetableId === record.timetableId && o.date === record.date && o.subjectId
@@ -302,7 +363,6 @@ export async function getAttendanceStats() {
     }
 
     const subjectStats = semesterSubjects.map((sub) => {
-      // Count all attendance records whose effective subject is this subject
       const subRecords = allRecords.filter((r) => effectiveSubjectId(r) === sub.id);
       const presentCount = subRecords.filter((r) => r.status === 'present').length;
       const absentCount = subRecords.filter((r) => r.status === 'absent').length;
@@ -344,20 +404,82 @@ export async function getAttendanceHistory(subjectId?: string) {
     const user = await getAuthUser();
     if (!user) return { success: false, error: 'Unauthorized' };
 
-    const records = await db.query.attendance.findMany({
-      where: eq(attendance.userId, user.id),
-      with: { timetable: { with: { subject: true } } },
-      orderBy: [desc(attendance.date), desc(attendance.createdAt)],
-      limit: 100,
-    });
+    const rawRecords = await db
+      .select({
+        id: attendance.id,
+        userId: attendance.userId,
+        timetableId: attendance.timetableId,
+        date: attendance.date,
+        status: attendance.status,
+        createdAt: attendance.createdAt,
+        ttId: timetable.id,
+        ttUserId: timetable.userId,
+        ttClassId: timetable.classId,
+        ttBatchId: timetable.batchId,
+        ttSubjectId: timetable.subjectId,
+        ttDayOfWeek: timetable.dayOfWeek,
+        ttStartTime: timetable.startTime,
+        ttEndTime: timetable.endTime,
+        ttRoom: timetable.room,
+        ttTeacher: timetable.teacher,
+        ttEffectiveFrom: timetable.effectiveFrom,
+        ttEffectiveUntil: timetable.effectiveUntil,
+        ttIsActive: timetable.isActive,
+        ttCreatedAt: timetable.createdAt,
+        subId: subjects.id,
+        subSemesterId: subjects.semesterId,
+        subName: subjects.name,
+        subCode: subjects.code,
+        subCreatedAt: subjects.createdAt,
+      })
+      .from(attendance)
+      .leftJoin(timetable, eq(attendance.timetableId, timetable.id))
+      .leftJoin(subjects, eq(timetable.subjectId, subjects.id))
+      .where(eq(attendance.userId, user.id))
+      .orderBy(desc(attendance.date), desc(attendance.createdAt))
+      .limit(100);
 
-    // Fetch all overrides for this user
+    const records = rawRecords.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      timetableId: r.timetableId,
+      date: r.date,
+      status: r.status,
+      createdAt: r.createdAt,
+      timetable: r.ttId
+        ? {
+            id: r.ttId,
+            userId: r.ttUserId,
+            classId: r.ttClassId,
+            batchId: r.ttBatchId,
+            subjectId: r.ttSubjectId,
+            dayOfWeek: r.ttDayOfWeek,
+            startTime: r.ttStartTime,
+            endTime: r.ttEndTime,
+            room: r.ttRoom,
+            teacher: r.ttTeacher,
+            effectiveFrom: r.ttEffectiveFrom,
+            effectiveUntil: r.ttEffectiveUntil,
+            isActive: r.ttIsActive,
+            createdAt: r.ttCreatedAt,
+            subject: r.subId
+              ? {
+                  id: r.subId,
+                  semesterId: r.subSemesterId!,
+                  name: r.subName!,
+                  code: r.subCode,
+                  createdAt: r.subCreatedAt!,
+                }
+              : null,
+          }
+        : null,
+    }));
+
     const allOverrides =
       records.length > 0
         ? await db.select().from(lectureOverrides).where(eq(lectureOverrides.userId, user.id))
         : [];
 
-    // Resolve unique override subject IDs
     const overrideSubjectIds = [
       ...new Set(allOverrides.map((o) => o.subjectId).filter((id): id is string => !!id)),
     ];
@@ -382,7 +504,6 @@ export async function getAttendanceHistory(subjectId?: string) {
       };
     });
 
-    // Filter by effective subject (uses override subject if set)
     const filtered = subjectId
       ? enriched.filter((r) => {
           const effectiveSub = r.overrideSubjectId ?? r.timetable?.subject?.id;
