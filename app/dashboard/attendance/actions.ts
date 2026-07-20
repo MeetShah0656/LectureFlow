@@ -49,13 +49,11 @@ export async function getTodayAttendance(dateStr?: string) {
       );
     }
 
-    const [dateMatchedEntries, todayRecords, dayOverrides] = await Promise.all([
+    const [allDayEntries, todayRecords, dayOverrides] = await Promise.all([
       db.query.timetable.findMany({
         where: and(
           eq(timetable.dayOfWeek, dayOfWeek),
-          or(...userConditions),
-          lte(timetable.effectiveFrom, targetDateStr),
-          or(isNull(timetable.effectiveUntil), gte(timetable.effectiveUntil, targetDateStr))
+          or(...userConditions)
         ),
         with: { subject: true },
         orderBy: [asc(timetable.startTime)],
@@ -67,6 +65,13 @@ export async function getTodayAttendance(dateStr?: string) {
         and(eq(lectureOverrides.userId, user.id), eq(lectureOverrides.date, targetDateStr))
       ),
     ]);
+
+    // Filter entries active on targetDateStr
+    const dateMatchedEntries = allDayEntries.filter((entry) => {
+      const from = entry.effectiveFrom ? entry.effectiveFrom.toString() : '1970-01-01';
+      const until = entry.effectiveUntil ? entry.effectiveUntil.toString() : '9999-12-31';
+      return from <= targetDateStr! && until >= targetDateStr!;
+    });
 
     // Include any archived entries that have attendance marked on this specific date
     const existingEntryIds = new Set(dateMatchedEntries.map((e) => e.id));

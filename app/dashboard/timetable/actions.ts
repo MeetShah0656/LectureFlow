@@ -48,16 +48,20 @@ export async function getUserTimetable() {
       );
     }
 
-    const entries = await db.query.timetable.findMany({
+    const allEntries = await db.query.timetable.findMany({
       where: and(
         or(...userConditions),
-        eq(timetable.isActive, true),
-        or(isNull(timetable.effectiveUntil), gte(timetable.effectiveUntil, todayStr))
+        eq(timetable.isActive, true)
       ),
       with: {
         subject: true,
       },
       orderBy: [asc(timetable.dayOfWeek), asc(timetable.startTime)],
+    });
+
+    const entries = allEntries.filter((entry) => {
+      if (!entry.effectiveUntil) return true;
+      return entry.effectiveUntil.toString() >= todayStr;
     });
 
     return { success: true, entries };
