@@ -1,5 +1,5 @@
 import { pgTable, uuid, text, integer, boolean, timestamp, date, uniqueIndex, index, unique } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 
 // 1. Universities Table
 export const universities = pgTable('universities', {
@@ -223,6 +223,9 @@ export const timetable = pgTable('timetable', {
   endTime: text('end_time').notNull(), // "HH:MM" e.g. "09:55"
   room: text('room'), // e.g. "Room 403"
   teacher: text('teacher'), // e.g. "Dr. John Doe"
+  effectiveFrom: date('effective_from').default(sql`CURRENT_DATE`).notNull(),
+  effectiveUntil: date('effective_until'),
+  isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index('timetable_user_idx').on(table.userId),
@@ -230,6 +233,8 @@ export const timetable = pgTable('timetable', {
   index('timetable_batch_idx').on(table.batchId),
   index('timetable_subject_idx').on(table.subjectId),
   index('timetable_day_idx').on(table.dayOfWeek),
+  index('timetable_active_idx').on(table.isActive),
+  index('timetable_effective_idx').on(table.effectiveFrom, table.effectiveUntil),
 ]);
 
 export const timetableRelations = relations(timetable, ({ one, many }) => ({

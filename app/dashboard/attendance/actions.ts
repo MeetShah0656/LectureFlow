@@ -3,7 +3,7 @@
 import { db } from '@/database/db';
 import { users, subjects, timetable, attendance, lectureOverrides } from '@/database/schema';
 import { createClient } from '@/lib/supabase/server';
-import { eq, and, or, asc, desc, isNull, inArray } from 'drizzle-orm';
+import { eq, and, or, asc, desc, isNull, inArray, lte, gte } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
 // Helper to get auth user profile
@@ -49,9 +49,14 @@ export async function getTodayAttendance(dateStr?: string) {
       );
     }
 
-    const [todayEntries, todayRecords, dayOverrides] = await Promise.all([
+    const [dateMatchedEntries, todayRecords, dayOverrides] = await Promise.all([
       db.query.timetable.findMany({
-        where: and(eq(timetable.dayOfWeek, dayOfWeek), or(...userConditions)),
+        where: and(
+          eq(timetable.dayOfWeek, dayOfWeek),
+          or(...userConditions),
+          lte(timetable.effectiveFrom, targetDateStr),
+          or(isNull(timetable.effectiveUntil), gte(timetable.effectiveUntil, targetDateStr))
+        ),
         with: { subject: true },
         orderBy: [asc(timetable.startTime)],
       }),
@@ -62,6 +67,24 @@ export async function getTodayAttendance(dateStr?: string) {
         and(eq(lectureOverrides.userId, user.id), eq(lectureOverrides.date, targetDateStr))
       ),
     ]);
+
+    // Include any archived entries that have attendance marked on this specific date
+    const existingEntryIds = new Set(dateMatchedEntries.map((e) => e.id));
+    const extraTtIds = todayRecords
+      .map((r) => r.timetableId)
+      .filter((id) => !existingEntryIds.has(id));
+
+    let extraEntries: typeof dateMatchedEntries = [];
+    if (extraTtIds.length > 0) {
+      extraEntries = await db.query.timetable.findMany({
+        where: inArray(timetable.id, extraTtIds),
+        with: { subject: true },
+      });
+    }
+
+    const todayEntries = [...dateMatchedEntries, ...extraEntries].sort((a, b) =>
+      a.startTime.localeCompare(b.startTime)
+    );
 
     // Resolve any override subjects
     const overrideSubjectIds = [
