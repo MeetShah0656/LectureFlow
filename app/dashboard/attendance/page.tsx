@@ -295,6 +295,7 @@ export default function AttendancePage() {
   const [todayDate, setTodayDate] = React.useState('');
   const [markingId, setMarkingId] = React.useState<string | null>(null);
   const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [usingFallback, setUsingFallback] = React.useState(false);
 
   // Stats tab
   const [subjectStats, setSubjectStats] = React.useState<SubjectStat[]>([]);
@@ -320,6 +321,7 @@ export default function AttendancePage() {
         if (todayRes.success) {
           setTodayEntries((todayRes.entries || []) as TodayEntry[]);
           setTodayDate(todayRes.todayDate || '');
+          setUsingFallback(todayRes.usingFallback ?? false);
         } else {
           setError(todayRes.error || 'Failed to load data.');
         }
@@ -385,6 +387,7 @@ export default function AttendancePage() {
       const res = await getTodayAttendance(dateStr);
       if (res.success) {
         setTodayEntries((res.entries || []) as TodayEntry[]);
+        setUsingFallback(res.usingFallback ?? false);
       } else {
         setError(res.error || 'Failed to load entries for selected date.');
       }
@@ -568,6 +571,16 @@ export default function AttendancePage() {
                   />
                 </CardContent>
               </Card>
+
+              {/* Fallback notice */}
+              {usingFallback && (
+                <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/8 text-amber-700 dark:text-amber-400">
+                  <Sparkles className="h-4 w-4 shrink-0 mt-0.5" />
+                  <p className="text-xs font-medium leading-relaxed">
+                    No timetable existed for this date — showing your <span className="font-bold">current active schedule</span> so you can mark attendance retroactively.
+                  </p>
+                </div>
+              )}
 
               {todayEntries.length === 0 ? (
                 <Card className="border-border/60 bg-card/40 backdrop-blur-md">

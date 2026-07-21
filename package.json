@@ -9,7 +9,9 @@
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed": "tsx database/seed.ts"
+    "db:seed": "tsx database/seed.ts",
+    "db:backup": "tsx database/backup.ts",
+    "db:restore": "tsx database/restore.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

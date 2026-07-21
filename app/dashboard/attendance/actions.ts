@@ -183,9 +183,78 @@ export async function getTodayAttendance(dateStr?: string) {
       }));
     }
 
-    const todayEntries = [...dateMatchedEntries, ...extraEntries].sort((a, b) =>
+    let todayEntries = [...dateMatchedEntries, ...extraEntries].sort((a, b) =>
       a.startTime.localeCompare(b.startTime)
     );
+
+    // ── Fallback: if no entries existed on this past date, use current active timetable ──
+    // This handles the case where the timetable was empty on a past date (e.g. before
+    // the user had set up their schedule) so they can still mark retroactive attendance.
+    let usingFallback = false;
+    const isPastDate = targetDateStr < new Date().toISOString().split('T')[0];
+    if (todayEntries.length === 0 && isPastDate) {
+      const rawFallback = await db
+        .select({
+          id: timetable.id,
+          userId: timetable.userId,
+          classId: timetable.classId,
+          batchId: timetable.batchId,
+          subjectId: timetable.subjectId,
+          dayOfWeek: timetable.dayOfWeek,
+          startTime: timetable.startTime,
+          endTime: timetable.endTime,
+          room: timetable.room,
+          teacher: timetable.teacher,
+          effectiveFrom: timetable.effectiveFrom,
+          effectiveUntil: timetable.effectiveUntil,
+          isActive: timetable.isActive,
+          createdAt: timetable.createdAt,
+          subId: subjects.id,
+          subSemesterId: subjects.semesterId,
+          subName: subjects.name,
+          subCode: subjects.code,
+          subCreatedAt: subjects.createdAt,
+        })
+        .from(timetable)
+        .leftJoin(subjects, eq(timetable.subjectId, subjects.id))
+        .where(
+          and(
+            eq(timetable.dayOfWeek, dayOfWeek),
+            eq(timetable.isActive, true),
+            or(...userConditions)
+          )
+        )
+        .orderBy(asc(timetable.startTime));
+
+      if (rawFallback.length > 0) {
+        usingFallback = true;
+        todayEntries = rawFallback.map((e) => ({
+          id: e.id,
+          userId: e.userId,
+          classId: e.classId,
+          batchId: e.batchId,
+          subjectId: e.subjectId,
+          dayOfWeek: e.dayOfWeek,
+          startTime: e.startTime,
+          endTime: e.endTime,
+          room: e.room,
+          teacher: e.teacher,
+          effectiveFrom: e.effectiveFrom,
+          effectiveUntil: e.effectiveUntil,
+          isActive: e.isActive,
+          createdAt: e.createdAt,
+          subject: e.subId
+            ? {
+                id: e.subId,
+                semesterId: e.subSemesterId!,
+                name: e.subName!,
+                code: e.subCode,
+                createdAt: e.subCreatedAt!,
+              }
+            : null,
+        }));
+      }
+    }
 
     // Resolve any override subjects
     const overrideSubjectIds = [
@@ -216,7 +285,7 @@ export async function getTodayAttendance(dateStr?: string) {
       };
     });
 
-    return { success: true, entries: entriesWithStatus, todayDate: targetDateStr };
+    return { success: true, entries: entriesWithStatus, todayDate: targetDateStr, usingFallback };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch attendance.';
     console.error('Error in getTodayAttendance:', error);
