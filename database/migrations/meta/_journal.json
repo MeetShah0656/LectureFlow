@@ -43,6 +43,13 @@
       "when": 1783599360205,
       "tag": "0005_volatile_boom_boom",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784632554065,
+      "tag": "0006_good_newton_destine",
+      "breakpoints": true
     }
   ]
 }
