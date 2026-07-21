@@ -21,9 +21,12 @@ async function getAuthUser() {
 
 // Get today's or a previous date's timetable entries with attendance status,
 // per-day overrides (teacher / room / notes / subject)
-export async function getTodayAttendance(dateStr?: string) {
+export async function getTodayAttendance(
+  dateStr?: string,
+  preloadedUser?: Awaited<ReturnType<typeof getAuthUser>>
+) {
   try {
-    const user = await getAuthUser();
+    const user = preloadedUser ?? await getAuthUser();
     if (!user) return { success: false, error: 'Unauthorized' };
     if (!user.semesterId) return { success: false, error: 'Please complete onboarding first.' };
 
@@ -317,8 +320,8 @@ export async function markAttendance(
       await db.insert(attendance).values({ userId: user.id, timetableId, date, status });
     }
 
-    revalidatePath('/dashboard/attendance');
-    revalidatePath('/dashboard');
+    // No revalidatePath — the client already updates state optimistically.
+    // revalidatePath here would bust the server cache unnecessarily on every tap.
     return { success: true };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to mark attendance.';
@@ -345,8 +348,7 @@ export async function unmarkAttendance(timetableId: string, date: string) {
       await db.delete(attendance).where(eq(attendance.id, existing.id));
     }
 
-    revalidatePath('/dashboard/attendance');
-    revalidatePath('/dashboard');
+    // No revalidatePath — client state is already updated locally.
     return { success: true };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to unmark attendance.';
@@ -429,9 +431,9 @@ export async function deleteLectureOverride(timetableId: string, date: string) {
 }
 
 // Get per-subject attendance statistics — respects subject overrides
-export async function getAttendanceStats() {
+export async function getAttendanceStats(preloadedUser?: Awaited<ReturnType<typeof getAuthUser>>) {
   try {
-    const user = await getAuthUser();
+    const user = preloadedUser ?? await getAuthUser();
     if (!user) return { success: false, error: 'Unauthorized' };
     if (!user.semesterId) return { success: false, error: 'Semester not configured.' };
 
@@ -550,45 +552,50 @@ export async function getAttendanceStats() {
 }
 
 // Get attendance history — includes override subject info for past records
-export async function getAttendanceHistory(subjectId?: string) {
-  try {
-    const user = await getAuthUser();
-    if (!user) return { success: false, error: 'Unauthorized' };
+// Fix: fetch overrides in PARALLEL with main query instead of sequentially
+export async function getAttendanceHistory(user?: Awaited<ReturnType<typeof getAuthUser>>) {
+  const authUser = user ?? await getAuthUser();
+  if (!authUser) return { success: false, error: 'Unauthorized' };
 
-    const rawRecords = await db
-      .select({
-        id: attendance.id,
-        userId: attendance.userId,
-        timetableId: attendance.timetableId,
-        date: attendance.date,
-        status: attendance.status,
-        createdAt: attendance.createdAt,
-        ttId: timetable.id,
-        ttUserId: timetable.userId,
-        ttClassId: timetable.classId,
-        ttBatchId: timetable.batchId,
-        ttSubjectId: timetable.subjectId,
-        ttDayOfWeek: timetable.dayOfWeek,
-        ttStartTime: timetable.startTime,
-        ttEndTime: timetable.endTime,
-        ttRoom: timetable.room,
-        ttTeacher: timetable.teacher,
-        ttEffectiveFrom: timetable.effectiveFrom,
-        ttEffectiveUntil: timetable.effectiveUntil,
-        ttIsActive: timetable.isActive,
-        ttCreatedAt: timetable.createdAt,
-        subId: subjects.id,
-        subSemesterId: subjects.semesterId,
-        subName: subjects.name,
-        subCode: subjects.code,
-        subCreatedAt: subjects.createdAt,
-      })
-      .from(attendance)
-      .leftJoin(timetable, eq(attendance.timetableId, timetable.id))
-      .leftJoin(subjects, eq(timetable.subjectId, subjects.id))
-      .where(eq(attendance.userId, user.id))
-      .orderBy(desc(attendance.date), desc(attendance.createdAt))
-      .limit(100);
+  try {
+    // Run main attendance query AND overrides fetch in parallel
+    const [rawRecords, allOverrides] = await Promise.all([
+      db
+        .select({
+          id: attendance.id,
+          userId: attendance.userId,
+          timetableId: attendance.timetableId,
+          date: attendance.date,
+          status: attendance.status,
+          createdAt: attendance.createdAt,
+          ttId: timetable.id,
+          ttUserId: timetable.userId,
+          ttClassId: timetable.classId,
+          ttBatchId: timetable.batchId,
+          ttSubjectId: timetable.subjectId,
+          ttDayOfWeek: timetable.dayOfWeek,
+          ttStartTime: timetable.startTime,
+          ttEndTime: timetable.endTime,
+          ttRoom: timetable.room,
+          ttTeacher: timetable.teacher,
+          ttEffectiveFrom: timetable.effectiveFrom,
+          ttEffectiveUntil: timetable.effectiveUntil,
+          ttIsActive: timetable.isActive,
+          ttCreatedAt: timetable.createdAt,
+          subId: subjects.id,
+          subSemesterId: subjects.semesterId,
+          subName: subjects.name,
+          subCode: subjects.code,
+          subCreatedAt: subjects.createdAt,
+        })
+        .from(attendance)
+        .leftJoin(timetable, eq(attendance.timetableId, timetable.id))
+        .leftJoin(subjects, eq(timetable.subjectId, subjects.id))
+        .where(eq(attendance.userId, authUser.id))
+        .orderBy(desc(attendance.date), desc(attendance.createdAt))
+        .limit(100),
+      db.select().from(lectureOverrides).where(eq(lectureOverrides.userId, authUser.id)),
+    ]);
 
     const records = rawRecords.map((r) => ({
       id: r.id,
@@ -626,11 +633,6 @@ export async function getAttendanceHistory(subjectId?: string) {
         : null,
     }));
 
-    const allOverrides =
-      records.length > 0
-        ? await db.select().from(lectureOverrides).where(eq(lectureOverrides.userId, user.id))
-        : [];
-
     const overrideSubjectIds = [
       ...new Set(allOverrides.map((o) => o.subjectId).filter((id): id is string => !!id)),
     ];
@@ -655,17 +657,35 @@ export async function getAttendanceHistory(subjectId?: string) {
       };
     });
 
-    const filtered = subjectId
-      ? enriched.filter((r) => {
-          const effectiveSub = r.overrideSubjectId ?? r.timetable?.subject?.id;
-          return effectiveSub === subjectId;
-        })
-      : enriched;
-
-    return { success: true, records: filtered };
+    return { success: true, records: enriched };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch history.';
     console.error('Error in getAttendanceHistory:', error);
+    return { success: false, error: message };
+  }
+}
+
+// ─── COMBINED LOADER ──────────────────────────────────────────────────────────
+// Authenticates ONCE, then fetches today's schedule + stats + history all in
+// parallel. Replaces 3 separate server action calls (which each did auth
+// independently = 6 network round-trips just for auth).
+export async function getAllAttendanceData(dateStr?: string) {
+  try {
+    const user = await getAuthUser();
+    if (!user) return { success: false, error: 'Unauthorized' };
+    if (!user.semesterId) return { success: false, error: 'Please complete onboarding first.' };
+
+    // Run all 3 fetches in true parallel — single auth overhead
+    const [todayRes, statsRes, historyRes] = await Promise.all([
+      getTodayAttendance(dateStr, user),
+      getAttendanceStats(user),
+      getAttendanceHistory(user),
+    ]);
+
+    return { success: true, todayRes, statsRes, historyRes };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to load attendance data.';
+    console.error('Error in getAllAttendanceData:', error);
     return { success: false, error: message };
   }
 }

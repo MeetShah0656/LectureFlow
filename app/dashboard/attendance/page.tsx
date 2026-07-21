@@ -33,6 +33,7 @@ import {
   getAttendanceHistory,
   saveLectureOverride,
   deleteLectureOverride,
+  getAllAttendanceData,
 } from './actions';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -308,31 +309,34 @@ export default function AttendancePage() {
   const [historyRecords, setHistoryRecords] = React.useState<HistoryRecord[]>([]);
   const [historyFilter, setHistoryFilter] = React.useState('');
 
-  // ── Load all data ──────────────────────────────────────────────────────────
+  // ── Load all data (single auth round-trip via combined loader) ──────────────
   React.useEffect(() => {
     async function loadAll() {
       try {
-        const [todayRes, statsRes, historyRes] = await Promise.all([
-          getTodayAttendance(),
-          getAttendanceStats(),
-          getAttendanceHistory(),
-        ]);
+        const result = await getAllAttendanceData();
 
-        if (todayRes.success) {
+        if (!result.success) {
+          setError(result.error || 'Failed to load data.');
+          return;
+        }
+
+        const { todayRes, statsRes, historyRes } = result;
+
+        if (todayRes?.success) {
           setTodayEntries((todayRes.entries || []) as TodayEntry[]);
           setTodayDate(todayRes.todayDate || '');
           setUsingFallback(todayRes.usingFallback ?? false);
-        } else {
+        } else if (todayRes && !todayRes.success) {
           setError(todayRes.error || 'Failed to load data.');
         }
 
-        if (statsRes.success) {
+        if (statsRes?.success) {
           setSubjectStats((statsRes.subjects || []) as SubjectStat[]);
           setOverallStats(statsRes.overall || { present: 0, absent: 0, total: 0, percentage: 0 });
           setTargetPercentage(statsRes.target || 75);
         }
 
-        if (historyRes.success) {
+        if (historyRes?.success) {
           setHistoryRecords((historyRes.records || []) as HistoryRecord[]);
         }
       } catch {

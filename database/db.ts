@@ -8,8 +8,8 @@ const globalForDb = globalThis as unknown as {
 
 const pool = globalForDb.conn ?? new Pool({
   connectionString: process.env.DATABASE_URL,
-  max: 3,
-  idleTimeoutMillis: 20000,
+  max: 10,
+  idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
 });
 
